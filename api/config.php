@@ -1,4 +1,3 @@
-
 <?php
 return [
     'db_host'  => 'b27a52hqxub36rs5972u-mysql.services.clever-cloud.com',
