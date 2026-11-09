@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);session_start();ob_start();require __DIR__.'/app/functions.php';
+declare(strict_types=1);require_once __DIR__.'/app/session_db.php';ob_start();require_once __DIR__.'/app/functions.php';
 $lang=$_GET['lang']??($_SESSION['lang']??'ar');if(!in_array($lang,['ar','en'],true))$lang='ar';$_SESSION['lang']=$lang;$L=require __DIR__."/lang/$lang.php";$rtl=$lang==='ar';$page=$_GET['page']??'dashboard';$error='';$notice='';
 if($page==='logout'){session_destroy();header('Location: login.php');exit;}
 if($page==='login'){header('Location: login.php');exit;}

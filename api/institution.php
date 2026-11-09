@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
-session_start();
+require_once __DIR__ . '/app/session_db.php';
 ob_start();
-require __DIR__ . '/app/functions.php';
+require_once __DIR__ . '/app/functions.php';
 require __DIR__ . '/app/portal_layout.php';
 
 /* ---------- Guard: institution accounts only ---------- */

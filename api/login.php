@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-session_start();
+require_once __DIR__ . '/app/session_db.php';
 require_once __DIR__ . '/app/functions.php';
 
 $error = '';
