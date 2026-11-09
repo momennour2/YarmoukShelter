@@ -1,4 +1,8 @@
 <?php
+if (!file_exists(__DIR__ . '/../sessions')) {
+    @mkdir(__DIR__ . '/../sessions', 0777, true);
+}
+ini_set('session.save_path', __DIR__ . '/../sessions');
 declare(strict_types=1);
 function cfg():array{static $c=null;return $c??=require __DIR__.'/../config.php';}
 function db():PDO{static $p=null;if($p)return $p;$c=cfg();return $p=new PDO("mysql:host={$c['db_host']};dbname={$c['db_name']};charset=utf8mb4",$c['db_user'],$c['db_pass'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);}
