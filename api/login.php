@@ -87,8 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             audit('login', 'auth');
 
             $redirect_url = ($role === 'institution') 
-                ? 'institution.php' . ($u['must_change_password'] ? '?page=password' : '')
-                : 'index.php' . ($u['must_change_password'] ? '?page=change_password' : '');
+                ? '../institution.php' . ($u['must_change_password'] ? '?page=password' : '')
+                : '../index.php' . ($u['must_change_password'] ? '?page=change_password' : '');
 
             // توجيه قسري عبر JS لتجاوز عقبة الـ Serverless Headers
             echo "<script>window.location.href='" . $redirect_url . "';</script>";
