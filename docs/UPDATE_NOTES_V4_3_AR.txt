@@ -1,0 +1,27 @@
+Yarmouk Shelter V4.3 – Updates from handwritten requirements
+
+1. FULL distribution:
+   - Added NORMAL / FULL distribution type to beneficiaries.
+   - FULL means the whole camp received the same coupon/package.
+   - FULL is stored as a documentation/audit record only; it is excluded from household candidate receipt history and never changes candidate ranking/eligibility.
+   - FULL creation and import are restricted to the administrator.
+2. Operations Overview:
+   - Dashboard now includes recent FULL distribution records and recent audit operations.
+3. Candidate controls:
+   - Added search by name, national ID, HHID, or tent while preserving existing sector/category selection and ranking logic.
+   - FULL records are excluded from last-receipt calculations.
+4. Beneficiary records:
+   - Added search, category filter, and distribution-type filter.
+   - Import/export includes distribution type; old CSV files default to NORMAL.
+5. Data tools:
+   - Protected dt_* helper declarations with function_exists to prevent redeclaration fatal errors.
+6. Existing statistics include child age bands and orphan count. Orphan count currently uses the available family links: a child under 18 in an HH with a recorded deceased/Shahid parent.
+
+Existing database upgrade:
+   Run database/migration_full_distribution.sql once in phpMyAdmin against the active Yarmouk database.
+   Do not re-import schema.sql over an existing database. The migration is safe to rerun.
+
+Login recovery:
+   setup_admin.php is included as a one-time local recovery tool. Open it only on localhost if the admin login must be reset; it resets admin to username admin / temporary password 12803. Delete setup_admin.php immediately after use, then sign in and set a new password.
+
+Developer credit: Momen Nour.

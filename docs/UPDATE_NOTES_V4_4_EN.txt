@@ -1,0 +1,10 @@
+Yarmouk Shelter V4.4 – Reporting and Archive Improvements
+
+1. Archive search: search archived records by full name, national ID, HHID, or tent.
+2. Responsive profile filters: redesigned search/filter layout for desktop, tablet, and mobile.
+3. Advanced reports: multi-select sectors; default excludes E and R; child-only toggle; age range in completed months; independently selectable excluded social statuses; text search by name, ID, HHID, or tent.
+4. Print and CSV export use the exact same filtered result set.
+5. Developer credit is English-only. Removed standalone personal-name print/footer labels.
+6. Existing FULL distribution remains a documentation-only distribution type and is not counted as household/individual assistance or used to change candidate eligibility.
+
+Default child report range is 0–12 completed months. Default excluded statuses: Shahid, Dead, Abroad. Users can change these filters before printing/exporting.

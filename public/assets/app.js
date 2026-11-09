@@ -1,0 +1,1 @@
+document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('a[href*="archive="]').forEach(a=>a.addEventListener('click',e=>{if(!confirm('هل تريد أرشفة هذا السجل؟ لن يتم حذفه نهائياً.'))e.preventDefault()}));});
