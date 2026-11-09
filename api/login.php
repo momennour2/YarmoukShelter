@@ -46,13 +46,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'tent' => $p['tent'],
                 'at' => time(),
             ];
-            header('Location: resident.php');
+            
+            // توجيه قسري عبر JS لضمان عدم التعليق على Vercel
+            echo "<script>window.location.href='resident.php';</script>";
             exit;
         }
 
         if ($kind === 'staff') {
             $tab = 'staff';
-            $unTyped = normalize_username(pv('username'));      // AB-123456789 (accepts ab123456789, Arabic digits …)
+            $unTyped = normalize_username(pv('username')); 
             $un = mb_strtolower($unTyped);
             if (throttle_blocked('staff', $un)) {
                 throw new RuntimeException('تم إيقاف المحاولات مؤقتاً. حاول بعد 15 دقيقة.');
@@ -66,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$ok) {
                 throw new RuntimeException('اسم المستخدم أو كلمة المرور غير صحيحة.');
             }
-            if (pw_needs_rehash((string)$u['password_hash'])) {   // silently upgrade old hashes to Argon2id
+            if (pw_needs_rehash((string)$u['password_hash'])) {   
                 db()->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([hash_password($plain), $u['id']]);
             }
             session_regenerate_id(true);
@@ -83,11 +85,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
             db()->prepare('UPDATE users SET last_login_at=NOW() WHERE id=?')->execute([$u['id']]);
             audit('login', 'auth');
-            if ($role === 'institution') {
-                header('Location: institution.php' . ($u['must_change_password'] ? '?page=password' : ''));
-            } else {
-                header('Location: index.php' . ($u['must_change_password'] ? '?page=change_password' : ''));
-            }
+
+            $redirect_url = ($role === 'institution') 
+                ? 'institution.php' . ($u['must_change_password'] ? '?page=password' : '')
+                : 'index.php' . ($u['must_change_password'] ? '?page=change_password' : '');
+
+            // توجيه قسري عبر JS لتجاوز عقبة الـ Serverless Headers
+            echo "<script>window.location.href='" . $redirect_url . "';</script>";
             exit;
         }
     } catch (PDOException $e) {
