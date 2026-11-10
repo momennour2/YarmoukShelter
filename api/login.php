@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 declare(strict_types=1);
 require_once __DIR__ . '/app/session_db.php';
 require_once __DIR__ . '/app/functions.php';
