@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <button type="button" class="tab <?= $tab === 'staff' ? 'on' : '' ?>" data-tab="staff">متطوع / مؤسسة</button>
       </div>
 
-      <?php if ($error): ?><div class="alert"><?= e($error) ?></div><?php endif; ?>
+       if ($error): ?><div class="alert"><?= e($error) ?></div> endif; ?>
 
       <form method="post" class="auth-form <?= $tab === 'resident' ? '' : 'hidden' ?>" data-pane="resident" autocomplete="off">
         <h2>مرحباً بك</h2>
