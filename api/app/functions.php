@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 function cfg():array{static $c=null;return $c??=require __DIR__.'/../config.php';}
-function db():PDO{static $p=null;if($p)return $p;$c=cfg();return $p=new PDO("mysql:host={$c['db_host']};dbname={$c['db_name']};charset=utf8mb4",$c['db_user'],$c['db_pass'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);}
+function db():PDO{static $p=null;if($p)return $p;$c=cfg();$dsn="mysql:host={$c['db_host']};dbname={$c['db_name']};charset=utf8mb4";$opt=[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_TIMEOUT=>5];$last=null;foreach([0,300000,700000,1500000,2500000] as $wait){if($wait)usleep($wait);try{return $p=new PDO($dsn,$c['db_user'],$c['db_pass'],$opt);}catch(PDOException $e){$last=$e;$code=(int)($e->errorInfo[1]??$e->getCode());if(!in_array($code,[2002,2003,2006,2013,1040,1226],true))throw $e;}}throw $last;}
 function e($v):string{return htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function t(string $k):string{global $L;return $L[$k]??$k;}
 function csrf():string{if(empty($_SESSION['csrf']))$_SESSION['csrf']=bin2hex(random_bytes(32));return $_SESSION['csrf'];}

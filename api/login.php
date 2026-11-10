@@ -106,14 +106,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>مخيم اليرموك للإيواء · تسجيل الدخول</title>
-<link rel="icon" href="../public/assets/logo-sm.jpg">
-<link rel="stylesheet" href="../public/assets/luxe.css">
+<link rel="icon" href="/assets/logo-sm.jpg">
+<link rel="stylesheet" href="/assets/luxe.css">
 </head>
 <body class="auth-body">
 <div class="auth-wrap">
   <section class="auth-brand">
     <div class="auth-pattern"></div>
-    <img class="brand-logo" src="../public/assets/logo.jpg" alt="شعار مخيم اليرموك للإيواء" width="150" height="150">
+    <img class="brand-logo" src="/assets/logo.jpg" alt="شعار مخيم اليرموك للإيواء" width="150" height="150">
     <h1> إيواء اليرموك</h1>
     <p class="auth-lead">بوابة موحّدة للنازحين والمؤسسات الشريكة وفرق الإدارة، بخدمة أسرع وشفافية أكبر.</p>
     <ul class="auth-points">
