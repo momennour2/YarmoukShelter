@@ -85,7 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $q->execute([$unTyped]);
             $u = $q->fetch();
             $plain = (string)($_POST['password'] ?? '');
-            $ok = $u && password_verify($plain, $u['password_hash']);
+            // Unknown user: still run a hash so response time does not reveal which usernames exist.
+            $ok = $u ? password_verify($plain, $u['password_hash']) : (password_verify($plain, hash_password('dummy-' . $un)) && false);
             throttle_log('staff', $un, (bool)$ok);
             if (!$ok) {
                 throw new RuntimeException('اسم المستخدم أو كلمة المرور غير صحيحة.');
@@ -121,10 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo "<script>window.location.href='" . $redirect_url . "';</script>";
             exit;
         }
-    } catch (PDOException $e) {
-        $error = 'قاعدة البيانات غير مهيأة لـ V5. نفّذ database/migration_v5.sql ثم أعد المحاولة. (' . $e->getCode() . ')';
+    } catch (RuntimeException $e) {
+        $error = $e->getMessage();            // our own, user-facing messages only
     } catch (Throwable $e) {
-        $error = $e->getMessage();
+        error_log('login: ' . get_class($e) . ' ' . $e->getMessage());
+        $error = 'تعذّر تسجيل الدخول الآن. حاول بعد قليل، وإن استمر الخطأ راجع الإدارة.';
     }
 }
 ?><!doctype html>
@@ -150,6 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <li><b>الإدارة والمالية والإغاثة</b><span>لوحات تحكم كاملة بصلاحيات دقيقة</span></li>
     </ul>
     <?= partner_logos_html('partner-strip on-dark') ?>
+    <?= whatsapp_button() ?>
     <small class="auth-credit">Developed by Momen Nour</small>
   </section>
 

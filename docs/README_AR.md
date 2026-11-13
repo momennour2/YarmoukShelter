@@ -5,7 +5,7 @@
 2. افتح phpMyAdmin ثم Import واستورد `database/schema.sql`.
 3. عدّل `config.php` واكتب كلمة مرور MySQL في `db_pass` إذا كانت موجودة.
 4. افتح `http://localhost/Yarmouk_Shelter_System_V4/setup_admin.php` مرة واحدة.
-5. سجل الدخول: username `admin` وكلمة المرور الأولية `12803`.
+5. سجل الدخول: username `admin` وكلمة المرور الأولية (غيّرها فوراً بعد أول دخول).
 6. غيّر كلمة المرور فوراً، ثم احذف `setup_admin.php` من المجلد.
 7. افتح `http://localhost/Yarmouk_Shelter_System_V4/`.
 

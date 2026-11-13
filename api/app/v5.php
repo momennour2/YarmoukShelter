@@ -115,7 +115,14 @@ function normalize_digits(string $s): string
 
 function client_ip(): string
 {
-    return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+    // Behind Vercel REMOTE_ADDR is the proxy; the real client is in these headers (set by Vercel, not by the visitor).
+    foreach (['HTTP_X_VERCEL_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
+        $v = trim(explode(',', (string)($_SERVER[$h] ?? ''))[0]);
+        if ($v !== '' && filter_var($v, FILTER_VALIDATE_IP)) {
+            return substr($v, 0, 45);
+        }
+    }
+    return '';
 }
 
 function go(string $url): never
@@ -235,7 +242,7 @@ function sector_summary(array $sectorList): array
     $m = 'TIMESTAMPDIFF(MONTH,birth_date,CURDATE())';
     // One rule for every number: R / archived never counted; persons with Shahid/Dead/Missing/Detained/Absent not counted.
     $sql = "SELECT sector,
-        COUNT(DISTINCT hh_id) families,
+        COUNT(DISTINCT CASE WHEN is_household_head=1 THEN hh_id END) families,
         COUNT(*) people,
         COUNT(DISTINCT tent) tents,
         SUM(gender='Male') males,

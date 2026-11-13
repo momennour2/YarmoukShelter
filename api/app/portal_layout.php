@@ -20,6 +20,6 @@ function portal_head(string $title, string $who, string $sub, array $nav, string
 
 function portal_foot(): void
 {
-    echo '</main><footer class="portal-foot">' . partner_logos_html('partner-strip') . 'مركز إيواء اليرموك · Developed by Momen Nour</footer></body></html>';
+    echo '</main><footer class="portal-foot">' . partner_logos_html('partner-strip') . 'مركز إيواء اليرموك · Developed by Momen Nour</footer>' . whatsapp_button() . dhikr_script() . '</body></html>';
 }
 

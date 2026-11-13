@@ -261,7 +261,7 @@ function group_summary(array $sectors): array
     $act = ACTIVE_SQL;
     $m = 'TIMESTAMPDIFF(MONTH,birth_date,CURDATE())';
     $sql = "SELECT
-        COUNT(DISTINCT hh_id) families,
+        COUNT(DISTINCT CASE WHEN is_household_head=1 THEN hh_id END) families,
         SUM(is_household_head=1) heads,
         COUNT(*) people,
         COUNT(DISTINCT CONCAT(sector,'-',COALESCE(tent,''))) tents,
@@ -312,4 +312,256 @@ function reconciliation(array $sectors): array
     $out['by_status'] = $q->fetchAll(PDO::FETCH_KEY_PAIR);
     $out['counted'] = group_summary($sectors)['people'];
     return $out;
+}
+
+/* ---------- Religious reminder toast (on by default; the manager can switch it off / change timing) ---------- */
+function dhikr_script(): string
+{
+    if (setting('dhikr_enabled', '1') !== '1') {
+        return '';
+    }
+    $every = max(30, min(3600, (int)setting('dhikr_every', '120')));
+    $stay = max(5, min(60, (int)setting('dhikr_stay', '12')));
+    return '<script src="/assets/dhikr.js" defer data-every="' . $every . '" data-stay="' . $stay . '"></script>';
+}
+
+/* =====================================================================
+ * XLSX writer (no library): used by every export instead of CSV
+ * ===================================================================== */
+
+function xlsx_col(int $i): string
+{
+    $s = '';
+    for ($n = $i + 1; $n > 0; $n = intdiv($n - 1, 26)) {
+        $s = chr(65 + ($n - 1) % 26) . $s;
+    }
+    return $s;
+}
+
+function xlsx_xml(string $s): string
+{
+    $c = preg_replace('/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', '', $s);
+    return htmlspecialchars($c ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+}
+
+/** Returns the .xlsx file as a binary string, or throws if the zip extension is missing. */
+function xlsx_build(array $headers, array $rows, string $sheet = 'Data'): string
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('إضافة zip غير مفعّلة في PHP.');
+    }
+    $sheet = trim(preg_replace('/[\[\]:*?\/\\\\]/', ' ', $sheet) ?? '') ?: 'Data';
+    $sheet = mb_substr($sheet, 0, 31);
+    $numericHeader = [];
+    foreach ($headers as $i => $h) {
+        $numericHeader[$i] = (bool)preg_match('/(amount|qty|quantity|age|family|fam\b|المبلغ|الكمية)/i', (string)$h)
+            && !preg_match('/(id|phone|fc|hh|tent)/i', (string)$h);
+    }
+    $nCols = max(1, count($headers));
+    $x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        . '<cols><col min="1" max="' . $nCols . '" width="20" customWidth="1"/></cols><sheetData>';
+    $r = 1;
+    $x .= '<row r="1">';
+    foreach ($headers as $i => $h) {
+        $x .= '<c r="' . xlsx_col($i) . '1" t="inlineStr" s="1"><is><t xml:space="preserve">' . xlsx_xml((string)$h) . '</t></is></c>';
+    }
+    $x .= '</row>';
+    foreach ($rows as $row) {
+        $r++;
+        $x .= '<row r="' . $r . '">';
+        $i = 0;
+        foreach ($row as $v) {
+            $ref = xlsx_col($i) . $r;
+            if ($v === null || $v === '') {
+                $i++;
+                continue;
+            }
+            if (($numericHeader[$i] ?? false) && is_numeric($v) && !preg_match('/^0\d/', (string)$v)) {
+                $x .= '<c r="' . $ref . '"><v>' . (0 + $v) . '</v></c>';
+            } else {
+                // text cell: IDs keep their leading zeros and nothing is ever treated as a formula
+                $x .= '<c r="' . $ref . '" t="inlineStr"><is><t xml:space="preserve">' . xlsx_xml((string)$v) . '</t></is></c>';
+            }
+            $i++;
+        }
+        $x .= '</row>';
+    }
+    $x .= '</sheetData></worksheet>';
+
+    $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    $files = [
+        '[Content_Types].xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+        '_rels/.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="' . $ns . '" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' . xlsx_xml($sheet) . '" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        'xl/_rels/workbook.xml.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+        'xl/styles.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="' . $ns . '"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+        'xl/worksheets/sheet1.xml' => $x,
+    ];
+    $tmp = tempnam(sys_get_temp_dir(), 'xl');
+    $zip = new ZipArchive();
+    if ($zip->open($tmp, ZipArchive::OVERWRITE | ZipArchive::CREATE) !== true) {
+        throw new RuntimeException('تعذّر إنشاء ملف Excel.');
+    }
+    foreach ($files as $name => $content) {
+        $zip->addFromString($name, $content);
+    }
+    $zip->close();
+    $bin = (string)file_get_contents($tmp);
+    @unlink($tmp);
+    return $bin;
+}
+
+function xlsx_send(string $filename, array $headers, array $rows, string $sheet = 'Data'): void
+{
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    $filename = preg_replace('/[^A-Za-z0-9_.\-]/', '_', $filename) ?: 'export.xlsx';
+    try {
+        $bin = xlsx_build($headers, $rows, $sheet);
+    } catch (Throwable $e) {
+        // zip extension missing: never lose the export, fall back to a UTF-8 CSV that Excel opens
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . preg_replace('/\.xlsx$/i', '.csv', $filename) . '"');
+        $o = fopen('php://output', 'w');
+        fwrite($o, "\xEF\xBB\xBF");
+        fputcsv($o, $headers);
+        foreach ($rows as $r) {
+            fputcsv($o, $r);
+        }
+        fclose($o);
+        exit;
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($bin));
+    header('X-Content-Type-Options: nosniff');
+    echo $bin;
+    exit;
+}
+
+/** Every old CSV export/template now goes out as .xlsx. */
+function dt_send_csv($filename, $headers, $rows)
+{
+    xlsx_send((string)preg_replace('/\.csv$/i', '.xlsx', (string)$filename), (array)$headers, (array)$rows);
+}
+
+/* =====================================================================
+ * HH list: heads of household only, R never included
+ * ===================================================================== */
+
+function hh_list_headers(): array
+{
+    return ['ID', 'Name', 'Gender', 'Birth Date', 'Social Status', 'Family', 'Partner ID', 'Partner Name', 'Phone'];
+}
+
+function hh_list_rows(array $sectors): array
+{
+    $sectors = array_values(array_diff($sectors, ['R']));
+    if (!$sectors) {
+        return [];
+    }
+    $act = ACTIVE_SQL;
+    $sql = "SELECT p.hh_id,p.national_id,p.full_name,p.gender,p.birth_date,p.social_status,p.partner_name,p.phone,
+        (SELECT sp.national_id FROM profiles sp WHERE sp.hh_id=p.hh_id AND sp.id<>p.id AND sp.archived_at IS NULL AND sp.sector<>'R'
+           AND (sp.full_name=p.partner_name OR (sp.family_member IN ('Husband','Wife') AND sp.family_member<>p.family_member))
+           ORDER BY (sp.full_name=p.partner_name) DESC, sp.id LIMIT 1) partner_id
+      FROM profiles p
+      WHERE p.archived_at IS NULL AND p.sector<>'R' AND p.is_household_head=1 AND $act AND p.sector IN (" . ph($sectors) . ")
+      ORDER BY FIELD(p.sector,'A','AS','B','BS','C','CS','D','DS','E','S','S1'), CAST(p.tent AS UNSIGNED), p.tent, p.id";
+    $q = db()->prepare($sql);
+    $q->execute($sectors);
+    $heads = $q->fetchAll();
+
+    $sizes = [];
+    $fq = db()->query("SELECT hh_id, COUNT(*) c FROM profiles WHERE archived_at IS NULL AND sector<>'R' AND $act GROUP BY hh_id");
+    foreach ($fq as $r) {
+        $sizes[(string)$r['hh_id']] = (int)$r['c'];
+    }
+    $out = [];
+    foreach ($heads as $h) {
+        $out[] = [
+            $h['national_id'], $h['full_name'], $h['gender'], $h['birth_date'], $h['social_status'],
+            $sizes[(string)$h['hh_id']] ?? 1, $h['partner_id'] ?? '', $h['partner_name'], $h['phone'],
+        ];
+    }
+    return $out;
+}
+
+/* =====================================================================
+ * WhatsApp contact
+ * ===================================================================== */
+
+function whatsapp_number(): string
+{
+    return preg_replace('/\D/', '', setting('whatsapp_number', '97256390038')) ?? '';
+}
+
+function whatsapp_button(string $text = 'مرحباً، أحتاج مساعدة بخصوص مخيم اليرموك'): string
+{
+    $n = whatsapp_number();
+    if ($n === '') {
+        return '';
+    }
+    return '<a class="wa-float" target="_blank" rel="noopener noreferrer" href="https://wa.me/' . e($n) . '?text=' . rawurlencode($text) . '" aria-label="واتساب"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M4 3h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-5 4V4a1 1 0 0 1 0-1z"/></svg><span>تواصل عبر واتساب</span></a>';
+}
+
+/* =====================================================================
+ * Security: headers, HTTPS, idle timeout
+ * ===================================================================== */
+
+function send_security_headers(): void
+{
+    if (headers_sent()) {
+        return;
+    }
+    // HTTPS only (Vercel terminates TLS and tells us the original scheme)
+    $proto = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    if ($proto === 'http' && PHP_SAPI !== 'cli') {
+        header('Location: https://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '/'), true, 308);
+        exit;
+    }
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    header('Cross-Origin-Opener-Policy: same-origin');
+    header('Cross-Origin-Resource-Policy: same-origin');
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+    header('Cache-Control: no-store, max-age=0');      // pages hold personal data: never cached by browsers or proxies
+    header_remove('X-Powered-By');
+    // No CORS headers on purpose: the API is same-origin only.
+}
+
+/** Staff sessions end after 2 hours without activity; residents after 30 minutes (resident.php). */
+function enforce_idle_timeout(): void
+{
+    if (empty($_SESSION['user'])) {
+        return;
+    }
+    $now = time();
+    if (isset($_SESSION['last_seen']) && $now - (int)$_SESSION['last_seen'] > 7200) {
+        $_SESSION = [];
+        session_destroy();
+        session_start();
+        $_SESSION['login_notice'] = 'انتهت الجلسة لعدم النشاط. سجّل الدخول من جديد.';
+        header('Location: login.php?as=staff');
+        exit;
+    }
+    $_SESSION['last_seen'] = $now;
+}
+
+/** Cheap per-session limiter for JSON endpoints (e.g. the ID lookup). */
+function session_rate_limit(string $bucket, int $max, int $seconds): bool
+{
+    $now = time();
+    $w = $_SESSION['rl'][$bucket] ?? ['t' => $now, 'n' => 0];
+    if ($now - (int)$w['t'] > $seconds) {
+        $w = ['t' => $now, 'n' => 0];
+    }
+    $w['n']++;
+    $_SESSION['rl'][$bucket] = $w;
+    return $w['n'] <= $max;
 }

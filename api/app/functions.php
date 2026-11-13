@@ -28,7 +28,7 @@ function allowed_profile_sectors(string $action='view'):array{$out=[];foreach(se
 function allowed_module_sectors(string $module,string $action='view'):array{$out=[];foreach(sectors() as $s)if(can($module,$action,$s))$out[]=$s;return $out;}
 function profile_sector_sql(string $alias=''):array{$s=allowed_profile_sectors();if(is_admin())return ['',[]];if(!$s)return [' AND 1=0',[]];$col=$alias?' '.$alias.'.sector':' sector';return [' AND'.$col.' IN ('.implode(',',array_fill(0,count($s),'?')).')',$s];}
 function module_records(string $page, int|string $limit=300):array{
- $d=fields()[$page];$table=$d['table'];$args=[];$where='';$allowedSort=['id','sector','tent','national_id','full_name','birth_date','social_status','added_at','job_position','age','created_at'];
+ $d=fields()[$page];$table=$d['table'];$args=[];$where='';$allowedSort=['camp','id','sector','tent','national_id','full_name','birth_date','social_status','added_at','job_position','age','created_at'];
  if($page==='profiles'){
   $where=" WHERE archived_at IS NULL AND sector<>'R'";[$x,$a]=profile_sector_sql();$where.=$x;$args=$a;
   $sf=trim((string)($_GET['sector_filter']??''));if($sf!==''&&in_array($sf,sectors(),true)){$where.=' AND sector=?';$args[]=$sf;}
@@ -43,8 +43,8 @@ function module_records(string $page, int|string $limit=300):array{
   $s=allowed_module_sectors('hr');if(!is_admin()){$where=$s?' WHERE (sector IN ('.implode(',',array_fill(0,count($s),'?')).') OR sector IS NULL OR sector=\'\')':' WHERE 1=0';$args=$s;}
   $q=trim((string)($_GET['q']??''));if($q!==''){$where.=($where?' AND ':' WHERE ').'(full_name LIKE ? OR national_id LIKE ? OR job_position LIKE ? OR committee_name LIKE ?)';array_push($args,"%$q%","%$q%","%$q%","%$q%");}
  }
- $sort=(string)($_GET['sort']??'id');if(!in_array($sort,$allowedSort,true))$sort='id';$dir=strtolower((string)($_GET['dir']??'desc'))==='asc'?'ASC':'DESC';
- $sql="SELECT * FROM {$table}{$where} ORDER BY {$sort} {$dir}, id DESC";if($limit!=='all'){$n=max(1,min(10000,(int)$limit));$sql.=' LIMIT '.$n;}
+ $sort=(string)($_GET['sort']??($page==='profiles'?'camp':'id'));if(!in_array($sort,$allowedSort,true))$sort='id';$dir=strtolower((string)($_GET['dir']??'desc'))==='asc'?'ASC':'DESC';
+ $order="{$sort} {$dir}, id DESC";if($sort==='camp'&&$page==='profiles')$order="FIELD(sector,'A','AS','B','BS','C','CS','D','DS','E','S','S1'), CAST(tent AS UNSIGNED), tent, hh_id, is_household_head DESC, id";elseif($sort==='camp')$order='id DESC';$sql="SELECT * FROM {$table}{$where} ORDER BY {$order}";if($limit!=='all'){$n=max(1,min(10000,(int)$limit));$sql.=' LIMIT '.$n;}
  $q=db()->prepare($sql);$q->execute($args);return $q->fetchAll();
 }
 require_once __DIR__.'/v5.php';

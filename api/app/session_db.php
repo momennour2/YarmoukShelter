@@ -58,7 +58,16 @@ final class DbSessionHandler implements SessionHandlerInterface
     }
 }
 
+@ini_set('display_errors', '0');          // never show PHP errors to visitors
+@ini_set('log_errors', '1');
+@ini_set('expose_php', '0');
+send_security_headers();
+
 if (session_status() === PHP_SESSION_NONE) {
+    @ini_set('session.use_strict_mode', '1');
+    @ini_set('session.use_only_cookies', '1');
+    @ini_set('session.use_trans_sid', '0');
+    session_name('__Host-YSID');          // __Host- prefix: Secure, path=/, no Domain; cannot be overwritten from a sibling subdomain
     session_set_save_handler(new DbSessionHandler(), true);
     session_set_cookie_params([
         'lifetime' => 0,
@@ -70,3 +79,4 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 ensure_schema();
+enforce_idle_timeout();

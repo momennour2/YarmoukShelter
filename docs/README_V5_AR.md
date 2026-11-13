@@ -8,7 +8,7 @@
 2. **قاعدة جديدة:** phpMyAdmin ← Import ← `database/schema.sql`.
    **قاعدة V4 موجودة:** اختر القاعدة ثم Import ← `database/migration_v5.sql` (آمن للإعادة، لا يحذف بيانات). خذ نسخة احتياطية قبلها.
 3. عدّل `config.php` (كلمة مرور MySQL).
-4. افتح `setup_admin.php` مرة واحدة (admin / 12803) ثم **احذفه**.
+4. افتح `setup_admin.php` مرة واحدة (admin — كلمة المرور الأولية تُعطى لك بشكل منفصل، غيّرها فوراً) ثم **احذفه**.
 5. افتح `http://localhost/Yarmouk_Shelter_V5/login.php` وغيّر كلمة المرور.
 6. (اختياري للتجربة فقط) `database/demo_seed.sql` ثم جرّب: هوية `900000001` وسنة `1985`.
 

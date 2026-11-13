@@ -105,7 +105,7 @@ $history = [];
 $family = [];
 $news = [];
 if ($page === 'home') {
-    $q = db()->prepare("SELECT category,package,delivery_date,donor,distribution_type FROM beneficiaries WHERE delivery_date=CURDATE() AND (distribution_type='FULL' OR national_id IN (" . ph($ids) . ')) ORDER BY id DESC');
+    $q = db()->prepare("SELECT category,package,delivery_date,distribution_type FROM beneficiaries WHERE delivery_date=CURDATE() AND (distribution_type='FULL' OR national_id IN (" . ph($ids) . ')) ORDER BY id DESC');
     $q->execute($ids);
     $todayRows = $q->fetchAll();
 
@@ -115,7 +115,7 @@ if ($page === 'home') {
         $lastByCat[$label] = $lq->fetch() ?: null;
     }
 
-    $hq2 = db()->prepare("SELECT delivery_date,category,package,donor FROM beneficiaries WHERE national_id IN (" . ph($ids) . ") AND distribution_type='NORMAL' ORDER BY delivery_date DESC,id DESC LIMIT 10");
+    $hq2 = db()->prepare("SELECT delivery_date,category,package FROM beneficiaries WHERE national_id IN (" . ph($ids) . ") AND distribution_type='NORMAL' ORDER BY delivery_date DESC,id DESC LIMIT 10");
     $hq2->execute($ids);
     $history = $hq2->fetchAll();
 
@@ -157,7 +157,7 @@ if ($page === 'home'):
     <?php if ($received): ?>
       <ul class="plain">
       <?php foreach ($todayRows as $t): ?>
-        <li><?= $t['distribution_type'] === 'FULL' ? 'توزيع عام للمخيم' : 'مساعدة ' . e($catMap[$t['category']] ?? $t['category']) ?> — <b><?= e($t['package']) ?></b><?= $t['donor'] ? ' · ' . e($t['donor']) : '' ?></li>
+        <li><?= $t['distribution_type'] === 'FULL' ? 'توزيع عام للمخيم' : 'مساعدة ' . e($catMap[$t['category']] ?? $t['category']) ?> — <b><?= e($t['package']) ?></b></li>
       <?php endforeach; ?>
       </ul>
     <?php else: ?>
@@ -179,9 +179,9 @@ if ($page === 'home'):
 <section class="panel">
   <div class="panel-head"><h2>آخر الاستلامات</h2></div>
   <?php if ($history): ?>
-  <div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>الطرد / المساعدة</th><th>الجهة المانحة</th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>الطرد / المساعدة</th></tr></thead><tbody>
     <?php foreach ($history as $h): ?>
-    <tr><td><?= e($h['delivery_date']) ?></td><td><?= e($catMap[$h['category']] ?? $h['category']) ?></td><td><?= e($h['package']) ?></td><td><?= e($h['donor']) ?></td></tr>
+    <tr><td><?= e($h['delivery_date']) ?></td><td><?= e($catMap[$h['category']] ?? $h['category']) ?></td><td><?= e($h['package']) ?></td></tr>
     <?php endforeach; ?>
   </tbody></table></div>
   <?php else: ?><p class="empty">لا توجد استلامات مسجّلة بعد.</p><?php endif; ?>

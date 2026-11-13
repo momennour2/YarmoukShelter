@@ -318,3 +318,14 @@ details.fgroup>summary{cursor:pointer;font:700 17px var(--display);color:var(--n
 tr.total td{background:#f8efd5;font-weight:700}
 #access-box,#hide-box{margin:14px 0}
 @media print{.partner-strip,.brand-under{display:none}}
+
+/* ---------- V6: religious reminder toast ---------- */
+.dhikr-toast{position:fixed;inset-inline-start:20px;bottom:20px;z-index:9999;max-width:min(380px,calc(100vw - 40px));display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border-radius:16px;background:linear-gradient(135deg,var(--navy3),var(--navy));color:var(--gold2);font:500 17px/1.9 var(--display);box-shadow:var(--shadow);border:1px solid rgba(230,207,143,.45);opacity:0;transform:translateY(14px);transition:opacity .6s,transform .6s}
+.dhikr-toast.on{opacity:1;transform:none}
+.dhikr-toast button{background:none;border:0;color:var(--gold2);font-size:20px;cursor:pointer;line-height:1;padding:0}
+@media print{.dhikr-toast{display:none}}
+
+/* ---------- V6: WhatsApp floating contact ---------- */
+.wa-float{position:fixed;inset-inline-end:18px;bottom:18px;z-index:9998;display:inline-flex;align-items:center;gap:8px;padding:11px 16px;border-radius:999px;background:#1f8a5b;color:#fff;font:600 14px var(--body);text-decoration:none;box-shadow:0 10px 26px rgba(0,0,0,.28)}
+.wa-float:hover{background:#17724a}
+@media print{.wa-float{display:none}}

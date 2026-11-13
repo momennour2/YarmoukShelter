@@ -22,6 +22,6 @@ Existing database upgrade:
    Do not re-import schema.sql over an existing database. The migration is safe to rerun.
 
 Login recovery:
-   setup_admin.php is included as a one-time local recovery tool. Open it only on localhost if the admin login must be reset; it resets admin to username admin / temporary password 12803. Delete setup_admin.php immediately after use, then sign in and set a new password.
+   setup_admin.php is included as a one-time local recovery tool. Open it only on localhost if the admin login must be reset; it resets admin to username admin / a temporary password (change it immediately). Delete setup_admin.php immediately after use, then sign in and set a new password.
 
 Developer credit: Momen Nour.
