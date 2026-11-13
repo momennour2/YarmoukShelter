@@ -226,27 +226,30 @@ function scope_sectors(): array
 
 function sector_summary(array $sectorList): array
 {
+    $sectorList = array_values(array_diff($sectorList, ['R']));
     if (!$sectorList) {
         return [];
     }
     $in = ph($sectorList);
     $act = ACTIVE_SQL;
+    $m = 'TIMESTAMPDIFF(MONTH,birth_date,CURDATE())';
+    // One rule for every number: R / archived never counted; persons with Shahid/Dead/Missing/Detained/Absent not counted.
     $sql = "SELECT sector,
-        COUNT(DISTINCT CASE WHEN is_household_head=1 THEN hh_id END) families,
-        SUM($act) people,
+        COUNT(DISTINCT hh_id) families,
+        COUNT(*) people,
         COUNT(DISTINCT tent) tents,
-        SUM(gender='Male' AND $act) males,
-        SUM(gender='Female' AND $act) females,
-        SUM(birth_date IS NOT NULL AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())<12 AND $act) c0_1,
-        SUM(birth_date IS NOT NULL AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())>=12 AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())<60 AND $act) c1_5,
-        SUM(birth_date IS NOT NULL AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())>=60 AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())<144 AND $act) c5_12,
-        SUM(birth_date IS NOT NULL AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())>=144 AND TIMESTAMPDIFF(MONTH,birth_date,CURDATE())<216 AND $act) c12_18,
-        SUM(birth_date IS NOT NULL AND TIMESTAMPDIFF(YEAR,birth_date,CURDATE())>=60 AND $act) elderly,
-        SUM(COALESCE(disability,'')<>'' AND $act) disabled,
-        SUM(COALESCE(chronic_diseases,'')<>'' AND $act) chronic,
-        SUM(COALESCE(war_injury,'')<>'' AND $act) injured,
-        SUM(COALESCE(motherhood,'')<>'' AND $act) mothers
-      FROM profiles WHERE archived_at IS NULL AND sector IN ($in) GROUP BY sector ORDER BY sector";
+        SUM(gender='Male') males,
+        SUM(gender='Female') females,
+        SUM(birth_date IS NOT NULL AND $m<12) c0_1,
+        SUM(birth_date IS NOT NULL AND $m>=12 AND $m<60) c1_5,
+        SUM(birth_date IS NOT NULL AND $m>=60 AND $m<144) c5_12,
+        SUM(birth_date IS NOT NULL AND $m>=144 AND $m<216) c12_18,
+        SUM(birth_date IS NOT NULL AND TIMESTAMPDIFF(YEAR,birth_date,CURDATE())>=60) elderly,
+        SUM(COALESCE(disability,'')<>'') disabled,
+        SUM(COALESCE(chronic_diseases,'')<>'') chronic,
+        SUM(COALESCE(war_injury,'')<>'') injured,
+        SUM(COALESCE(motherhood,'')<>'') mothers
+      FROM profiles WHERE archived_at IS NULL AND sector<>'R' AND sector IN ($in) AND $act GROUP BY sector ORDER BY sector";
     $q = db()->prepare($sql);
     $q->execute($sectorList);
     return $q->fetchAll();
@@ -277,7 +280,7 @@ function never_received_count(string $sector, string $category): int
 {
     $set = expand_sectors([$sector]) ?: [$sector];
     $alloc = in_array($sector, ['A', 'B', 'C', 'D', 'S'], true) ? $sector : 'S';
-    $sql = "SELECT COUNT(*) FROM profiles p WHERE p.archived_at IS NULL AND p.sector IN (" . ph($set) . ") AND p.is_household_head=1
+    $sql = "SELECT COUNT(*) FROM profiles p WHERE p.archived_at IS NULL AND p.sector<>'R' AND (p.social_status IS NULL OR p.social_status NOT IN ('Shahid','Dead','Missing','Detained','Absent')) AND p.sector IN (" . ph($set) . ") AND p.is_household_head=1
         AND NOT EXISTS (SELECT 1 FROM beneficiaries b WHERE b.national_id=p.national_id AND b.category=? AND b.allocation_sector=? AND COALESCE(b.distribution_type,'NORMAL')<>'FULL')";
     $q = db()->prepare($sql);
     $q->execute(array_merge($set, [$category, $alloc]));
@@ -292,7 +295,7 @@ function next_candidates(string $sector, string $category, int $limit = 5): arra
     $head = $sector === 'S' ? '' : ' AND p.is_household_head=1';
     $sql = "SELECT p.sector,p.tent,p.national_id,p.full_name,p.hh_id,
         (SELECT MAX(b.delivery_date) FROM beneficiaries b WHERE b.national_id=p.national_id AND b.category=? AND b.allocation_sector=? AND COALESCE(b.distribution_type,'NORMAL')<>'FULL') last_date
-      FROM profiles p WHERE p.archived_at IS NULL AND p.sector IN (" . ph($set) . ")$head
+      FROM profiles p WHERE p.archived_at IS NULL AND p.sector<>'R' AND (p.social_status IS NULL OR p.social_status NOT IN ('Shahid','Dead','Missing','Detained','Absent')) AND p.sector IN (" . ph($set) . ")$head
       ORDER BY (last_date IS NOT NULL), last_date, p.added_at, p.tent, TIMESTAMPDIFF(YEAR,p.birth_date,CURDATE()) LIMIT " . max(1, min(50, $limit));
     $q = db()->prepare($sql);
     $q->execute(array_merge([$category, $alloc], $set));

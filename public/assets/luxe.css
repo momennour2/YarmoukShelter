@@ -304,3 +304,17 @@ details.fgroup>summary{cursor:pointer;font:700 17px var(--display);color:var(--n
 .portal-body th,.portal-body td{padding:11px 14px;border-bottom:1px solid #f0ebdc;text-align:start;white-space:nowrap}
 .portal-body .secondary{margin-inline-start:0}
 .portal-body .field textarea{font-family:var(--body)}
+
+/* ---------- V6: logo block, partner logos, logo manager ---------- */
+.brand-stack{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:6px}
+.brand-stack .brand-logo{object-fit:contain;margin:0;max-width:100%}
+.brand-under{letter-spacing:.14em;font:600 12px var(--body);color:var(--gold2);text-transform:uppercase;direction:ltr}
+.partner-strip{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:center;margin:14px 0}
+.partner-strip img{height:44px;width:auto;object-fit:contain;background:#fff;border-radius:10px;padding:4px 8px}
+.logo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:12px}
+.logo-card{border:1px solid var(--line);border-radius:var(--radius);padding:14px;background:#fff;display:grid;gap:10px}
+.logo-preview{height:110px;display:flex;align-items:center;justify-content:center;background:var(--ivory);border-radius:12px}
+.logo-preview img{max-height:100px;max-width:90%;object-fit:contain}
+tr.total td{background:#f8efd5;font-weight:700}
+#access-box,#hide-box{margin:14px 0}
+@media print{.partner-strip,.brand-under{display:none}}

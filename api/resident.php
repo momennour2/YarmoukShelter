@@ -28,10 +28,37 @@ $headId = (string)($hq->fetchColumn() ?: '');
 $ids = array_values(array_unique(array_filter([(string)$me['national_id'], $headId])));
 
 $page = $_GET['page'] ?? 'home';
-if (!in_array($page, ['home', 'new', 'tickets', 'ticket'], true)) {
+if (!in_array($page, ['home', 'new', 'tickets', 'ticket', 'setpass'], true)) {
     $page = 'home';
 }
 $error = '';
+
+/* ---------- First login: the birth year is only temporary, force a personal password ---------- */
+$mustSet = !empty($_SESSION['resident']['must_set_password']);
+if ($mustSet && $page !== 'setpass') {
+    go('resident.php?page=setpass');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'setpass') {
+    try {
+        check_csrf();
+        $p1 = normalize_digits((string)($_POST['password'] ?? ''));
+        $p2 = normalize_digits((string)($_POST['password2'] ?? ''));
+        check_password_rules($p1);
+        if ($p1 !== $p2) {
+            throw new RuntimeException('كلمتا المرور غير متطابقتين.');
+        }
+        if (preg_match('/^(19|20)\\d{2}$/', $p1)) {
+            throw new RuntimeException('لا تستخدم سنة الميلاد ككلمة مرور؛ اختر كلمة مرور أخرى.');
+        }
+        db()->prepare('REPLACE INTO resident_accounts(national_id,password_hash,last_login_at) VALUES(?,?,NOW())')
+            ->execute([$me['national_id'], hash_password($p1)]);
+        $_SESSION['resident']['must_set_password'] = 0;
+        go('resident.php?pw=1');
+    } catch (Throwable $e) {
+        $error = $e->getMessage();
+        $page = 'setpass';
+    }
+}
 
 /* ---------- Submit ticket ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ticket') {
@@ -103,12 +130,13 @@ $relMap = ['Husband' => 'الزوج', 'Wife' => 'الزوجة', 'Son' => 'ابن
 $catMap = ['Food' => 'غذائية', 'Financial' => 'نقدية', 'Logistics' => 'لوجستية'];
 $first = explode(' ', trim((string)$me['full_name']))[0] ?? '';
 
-portal_head('بوابة النازح', (string)$me['full_name'], 'بوابة الأسر', ['home' => 'حالتي', 'new' => 'رسالة جديدة', 'tickets' => 'رسائلي'], $page === 'ticket' ? 'tickets' : $page);
+portal_head('بوابة النازح', (string)$me['full_name'], 'بوابة الأسر', $mustSet ? ['setpass' => 'كلمة المرور'] : ['home' => 'حالتي', 'new' => 'رسالة جديدة', 'tickets' => 'رسائلي', 'setpass' => 'كلمة المرور'], $page === 'ticket' ? 'tickets' : $page);
 
 /* =========================== HOME =========================== */
 if ($page === 'home'):
     $received = count($todayRows) > 0;
     ?>
+<?php if (isset($_GET['pw'])): ?><div class="success">تم حفظ كلمة المرور. استخدمها في دخولك القادم.</div><?php endif; ?>
 <section class="hero-lux">
   <div>
     <span class="eyebrow">أهلاً وسهلاً</span>
@@ -167,6 +195,20 @@ if ($page === 'home'):
     <?php endforeach; ?>
   </tbody></table></div>
   <p class="hint">إذا وجدت خطأً في بيانات الأسرة أرسل لنا <a href="?page=new&type=inquiry">استفساراً</a>.</p>
+</section>
+
+<?php /* =========================== SET PASSWORD =========================== */
+elseif ($page === 'setpass'): ?>
+<section class="panel narrow">
+  <div class="panel-head"><h2><?= $mustSet ? 'اختر كلمة مرور خاصة بك' : 'تغيير كلمة المرور' ?></h2></div>
+  <?php if ($mustSet): ?><p class="muted">دخلت بسنة الميلاد وهي مؤقتة. اختر كلمة مرور (4 خانات فأكثر) لتدخل بها في المرات القادمة مع رقم هويتك.</p><?php endif; ?>
+  <?= flash_box($error, 'err') ?>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="setpass">
+    <label class="field"><span>كلمة المرور الجديدة</span><input type="password" name="password" minlength="4" required autocomplete="new-password"></label>
+    <label class="field"><span>أعد كتابتها</span><input type="password" name="password2" minlength="4" required autocomplete="new-password"></label>
+    <button class="primary gold-btn">حفظ والمتابعة</button>
+  </form>
 </section>
 
 <?php /* =========================== NEW TICKET =========================== */

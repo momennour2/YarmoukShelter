@@ -34,6 +34,12 @@ if (isset($have['users'])) {
 foreach (['role', 'institution_id', 'assigned_sectors', 'last_login_at'] as $c) {
     $add("عمود users.$c", in_array($c, $cols, true), 'نفّذ database/migration_v5.sql.');
 }
+foreach (['site_settings', 'site_assets', 'resident_accounts'] as $t) {
+    $add("جدول V6: $t", isset($have[$t]), 'يُنشأ تلقائياً عند أول فتح للنظام؛ إن لم يظهر تأكد من صلاحيات CREATE على القاعدة.');
+}
+foreach (['access_from', 'access_until', 'access_locked', 'hidden_features'] as $c) {
+    $add("عمود users.$c", in_array($c, $cols, true), 'يُضاف تلقائياً؛ إن لم يظهر تأكد من صلاحية ALTER على القاعدة.');
+}
 $add('ملف setup_admin.php محذوف', !is_file(__DIR__ . '/../setup_admin.php'), 'احذفه بعد أول استخدام.');
 $add('ملف demo_seed.sql غير موجود على الخادم العام', !is_file(__DIR__ . '/../database/demo_seed.sql'), 'احذفه قبل النشر.');
 $bad = count(array_filter($checks, fn($c) => !$c[1]));

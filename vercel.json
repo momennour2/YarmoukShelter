@@ -5,8 +5,16 @@
     }
   },
   "routes": [
-    { "handle": "filesystem" },
-    { "src": "/", "dest": "/api/login.php" },
-    { "src": "/(login|index|institution|resident)(?:\\.php)?", "dest": "/api/$1.php" }
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/",
+      "dest": "/api/login.php"
+    },
+    {
+      "src": "/(login|index|institution|resident|asset)(?:\\.php)?",
+      "dest": "/api/$1.php"
+    }
   ]
 }

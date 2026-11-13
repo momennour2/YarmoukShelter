@@ -7,9 +7,9 @@ function t(string $k):string{global $L;return $L[$k]??$k;}
 function csrf():string{if(empty($_SESSION['csrf']))$_SESSION['csrf']=bin2hex(random_bytes(32));return $_SESSION['csrf'];}
 function check_csrf():void{if(!hash_equals($_SESSION['csrf']??'',$_POST['csrf']??''))throw new RuntimeException('Invalid security token. Refresh the page.');}
 function user():?array{return $_SESSION['user']??null;}
-function require_login():void{if(!user()){header('Location: login.php');exit;}}
+function require_login():void{if(!user()){header('Location: login.php');exit;}enforce_staff_access();}
 function is_admin():bool{return (bool)(user()['is_admin']??false);}
-function can(string $module,string $action,string $sector=''):bool{if(!user())return false;if(is_admin())return true;$q=db()->prepare('SELECT sectors FROM user_permissions WHERE user_id=? AND module=? AND action=?');$q->execute([user()['id'],$module,$action]);$s=$q->fetchColumn();if($s===false)return false;if($sector==='')return true;if($s==='*')return true;return in_array($sector,array_map('trim',explode(',',$s)),true);}
+function can(string $module,string $action,string $sector=''):bool{if(!user())return false;if(is_admin())return true;if($action==='view_sensitive'&&feature_hidden('sensitive'))return false;if($action==='view'&&feature_hidden('mod_'.$module))return false;$q=db()->prepare('SELECT sectors FROM user_permissions WHERE user_id=? AND module=? AND action=?');$q->execute([user()['id'],$module,$action]);$s=$q->fetchColumn();if($s===false)return false;if($sector==='')return true;if($s==='*')return true;return in_array($sector,array_map('trim',explode(',',$s)),true);}
 function audit(string $action,string $module,?int $id=null,string $details=''):void{$q=db()->prepare('INSERT INTO audit_logs(user_id,action,module,record_id,details,ip_address) VALUES(?,?,?,?,?,?)');$q->execute([user()['id']??null,$action,$module,$id,$details,$_SERVER['REMOTE_ADDR']??'']);}
 function redirect(string $p):never{header('Location: ?page='.rawurlencode($p));exit;}
 function pv(string $k,string $d=''):string{return trim((string)($_POST[$k]??$d));}
@@ -48,6 +48,7 @@ function module_records(string $page, int|string $limit=300):array{
  $q=db()->prepare($sql);$q->execute($args);return $q->fetchAll();
 }
 require_once __DIR__.'/v5.php';
+require_once __DIR__.'/v6.php';
 require_once __DIR__.'/auth.php';
 require_once __DIR__.'/filters.php';
 require_once __DIR__.'/charts.php';

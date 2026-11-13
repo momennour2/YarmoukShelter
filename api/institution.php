@@ -9,6 +9,7 @@ require __DIR__ . '/app/portal_layout.php';
 if (!user() || role() !== 'institution') {
     go('login.php?as=staff');
 }
+enforce_staff_access();
 $instId = (int)(user()['institution_id'] ?? 0);
 $iq = db()->prepare('SELECT * FROM institutions WHERE id=? AND is_active=1');
 $iq->execute([$instId]);

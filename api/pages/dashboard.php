@@ -89,36 +89,36 @@ elseif ($role === 'sector_manager'):
     $stData = [];
     foreach ($stq->fetchAll() as $x) { $stData[$Lst[$x['s']] ?? ($x['s'] !== '' ? $x['s'] : 'غير محدد')] = (int)$x['c']; } ?>
 <div class="cols-3">
-  <section class="panel"><div class="panel-head"><h2>الجنس</h2></div><?= svg_donut(['ذكور' => $t['males'], 'إناث' => $t['females']], nfmt($t['people']), 'فرد') ?></section>
-  <section class="panel"><div class="panel-head"><h2>الحالة الاجتماعية</h2></div><?= svg_donut($stData, nfmt(array_sum($stData)), 'فرد') ?></section>
-  <section class="panel"><div class="panel-head"><h2>الفئات الأكثر احتياجاً</h2></div>
+  <?php if (!feature_hidden('dash_donuts')): ?><section class="panel"><div class="panel-head"><h2>الجنس</h2></div><?= svg_donut(['ذكور' => $t['males'], 'إناث' => $t['females']], nfmt($t['people']), 'فرد') ?></section><?php endif; ?>
+  <?php if (!feature_hidden('dash_donuts')): ?><section class="panel"><div class="panel-head"><h2>الحالة الاجتماعية</h2></div><?= svg_donut($stData, nfmt(array_sum($stData)), 'فرد') ?></section><?php endif; ?>
+  <?php if (!feature_hidden('dash_vuln')): ?><section class="panel"><div class="panel-head"><h2>الفئات الأكثر احتياجاً</h2></div>
     <div class="vuln-grid compact"><?php foreach ([['orphan','heart','أيتام'],['widow','female','أرامل'],['divorced','users','مطلقات'],['disabled','plus','إعاقة'],['elderly','elder','كبار سن'],['infant','child','رضّع']] as [$k,$ic,$lb]): ?>
-      <a class="vuln" href="<?= e(search_url([$k], ['sec[]' => $sec])) ?>"><span class="vi"><?= icon($ic, 20) ?></span><b><?= nfmt($vcs[$k]) ?></b><em><?= e($lb) ?></em></a><?php endforeach; ?></div></section>
+      <a class="vuln" href="<?= e(search_url([$k], ['sec[]' => $sec])) ?>"><span class="vi"><?= icon($ic, 20) ?></span><b><?= nfmt($vcs[$k]) ?></b><em><?= e($lb) ?></em></a><?php endforeach; ?></div></section><?php endif; ?>
 </div>
 
 <div class="cols-2">
-  <section class="panel"><div class="panel-head"><h2>الترشيحات القادمة · <?= e($catNames[$cat]) ?></h2><a href="?page=candidates&sector=<?= e($sec) ?>&category=<?= e($cat) ?>">القائمة الكاملة</a></div>
+  <?php if (!feature_hidden('dash_candidates')): ?><section class="panel"><div class="panel-head"><h2>الترشيحات القادمة · <?= e($catNames[$cat]) ?></h2><a href="?page=candidates&sector=<?= e($sec) ?>&category=<?= e($cat) ?>">القائمة الكاملة</a></div>
     <div class="table-wrap"><table><thead><tr><th>#</th><th>الخيمة</th><th>الاسم</th><th>آخر استلام</th></tr></thead><tbody>
     <?php foreach ($next as $i => $c): ?><tr><td><?= $i + 1 ?></td><td><?= e($c['tent']) ?></td><td><?= e($c['full_name']) ?></td><td><?= e($c['last_date'] ?? 'لم يستلم') ?></td></tr><?php endforeach; ?>
     <?php if (!$next): ?><tr><td colspan="4">لا يوجد مرشحون.</td></tr><?php endif; ?>
     </tbody></table></div>
-    <p class="hint">الترتيب: من لم يستلم أولاً، ثم أقدم استلام، ثم تاريخ إضافة الأسرة.</p></section>
+    <p class="hint">الترتيب: من لم يستلم أولاً، ثم أقدم استلام، ثم تاريخ إضافة الأسرة.</p></section><?php endif; ?>
 
-  <section class="panel"><div class="panel-head"><h2>أرصدة القطاع</h2><a href="?page=allocations">التفاصيل</a></div>
+  <?php if (!feature_hidden('dash_balances')): ?><section class="panel"><div class="panel-head"><h2>أرصدة القطاع</h2><a href="?page=allocations">التفاصيل</a></div>
     <div class="table-wrap"><table><thead><tr><th>القطاع</th><th>الطرد</th><th>المرصّد</th><th>المسلَّم</th><th>المتبقي</th></tr></thead><tbody>
     <?php foreach ($balances as $b): ?><tr><td><?= e($b['sector']) ?></td><td><?= e($b['package']) ?></td><td><?= (int)$b['allocated'] ?></td><td><?= (int)$b['distributed'] ?></td><td><b class="<?= $b['remaining'] < 0 ? 'neg' : '' ?>"><?= (int)$b['remaining'] ?></b></td></tr><?php endforeach; ?>
     <?php if (!$balances): ?><tr><td colspan="5">لا توجد ترصيدات مسجّلة لقطاعك.</td></tr><?php endif; ?>
-    </tbody></table></div></section>
+    </tbody></table></div></section><?php endif; ?>
 </div>
 
 <div class="cols-2">
-  <section class="panel"><div class="panel-head"><h2>التركيبة العمرية</h2></div>
-    <?= bars(['أقل من سنة' => $t['c0_1'], '1–5 سنوات' => $t['c1_5'], '5–12 سنة' => $t['c5_12'], '12–18 سنة' => $t['c12_18'], '60+ سنة' => $t['elderly']]) ?></section>
-  <section class="panel"><div class="panel-head"><h2>رسائل أسر القطاع</h2><a href="?page=tickets">الكل</a></div>
+  <?php if (!feature_hidden('dash_age')): ?><section class="panel"><div class="panel-head"><h2>التركيبة العمرية</h2></div>
+    <?= bars(['أقل من سنة' => $t['c0_1'], '1–5 سنوات' => $t['c1_5'], '5–12 سنة' => $t['c5_12'], '12–18 سنة' => $t['c12_18'], '60+ سنة' => $t['elderly']]) ?></section><?php endif; ?>
+  <?php if (!feature_hidden('dash_tickets')): ?><section class="panel"><div class="panel-head"><h2>رسائل أسر القطاع</h2><a href="?page=tickets">الكل</a></div>
     <div class="table-wrap"><table><thead><tr><th>#</th><th>الاسم</th><th>العنوان</th><th>الحالة</th></tr></thead><tbody>
     <?php foreach ($tickets as $x): ?><tr><td><a href="?page=tickets&id=<?= (int)$x['id'] ?>"><?= e(ticket_code((int)$x['id'])) ?></a></td><td><?= e($x['full_name']) ?></td><td><?= e($x['subject']) ?></td><td><?= status_badge($x['status']) ?></td></tr><?php endforeach; ?>
     <?php if (!$tickets): ?><tr><td colspan="4">لا توجد رسائل.</td></tr><?php endif; ?>
-    </tbody></table></div></section>
+    </tbody></table></div></section><?php endif; ?>
 </div>
 <?php }
 /* =========================================================
