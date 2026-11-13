@@ -125,10 +125,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!preg_match('/^\d{5,20}$/', $nid)) {
                 throw new RuntimeException('اكتب رقم هوية صحيحاً.');
             }
-            $del = db()->prepare('DELETE FROM resident_accounts WHERE national_id=?');
-            $del->execute([$nid]);
+            $pq = db()->prepare("SELECT full_name FROM profiles WHERE national_id=? AND archived_at IS NULL AND sector<>'R' LIMIT 1");
+            $pq->execute([$nid]);
+            $pn = $pq->fetchColumn();
+            if ($pn === false) {
+                throw new RuntimeException('لا يوجد ملف نشط بهذا الرقم.');
+            }
+            db()->prepare('DELETE FROM resident_accounts WHERE national_id=?')->execute([$nid]);
+            $c = resident_code_issue($nid);
             audit('resident_pw_reset', 'users', null, $nid);
-            $msg = $del->rowCount() ? 'تمت إعادة التعيين: سيدخل النازح بسنة ميلاده مرة أخرى ثم يختار كلمة جديدة.' : 'هذا النازح لم يغيّر كلمة مروره بعد (يدخل أصلاً بسنة الميلاد).';
+            $msg = 'رمز التفعيل الجديد للنازح ' . $pn . ': ' . $c['code'] . ' (صالح حتى ' . substr($c['expires'], 0, 10) . '). سلّمه له شخصياً؛ لن يظهر مرة ثانية. يُستعمل مرة واحدة.';
         }
 
         /* ---------- Save / toggle institution ---------- */
@@ -220,13 +226,20 @@ echo flash_box($msg) . flash_box($err, 'err');
 </section>
 
 <section class="panel">
-  <div class="panel-head"><h2>إعادة تعيين كلمة مرور نازح</h2></div>
+  <div class="panel-head"><h2>رمز تفعيل / إعادة تعيين كلمة مرور نازح</h2></div>
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="resident_reset">
     <label class="field"><span>رقم هوية النازح</span><input name="national_id" inputmode="numeric" required></label>
-    <div><button class="primary">إعادة التعيين</button></div>
+    <div><button class="primary">إصدار رمز جديد</button></div>
   </form>
-  <p class="hint">بعد الإعادة يدخل النازح بسنة ميلاده كأول مرة، ثم يُطلب منه اختيار كلمة مرور جديدة.</p>
+  <p class="hint">يمسح كلمة مروره القديمة ويصدر رمزاً عشوائياً من 8 خانات يدخل به مرة واحدة ثم يختار كلمة مرور جديدة.</p>
+  <h3>رموز تفعيل لقطاع كامل</h3>
+  <form method="post" action="?page=resident_codes" class="form-grid">
+    <input type="hidden" name="csrf" value="<?= e(csrf()) ?>">
+    <label class="field"><span>القطاع</span><select name="g"><option value="">كل القطاعات</option><?php foreach (visible_groups() as $gk => $gm): ?><option value="<?= e($gk) ?>"><?= e(count($gm) > 1 ? implode(' + ', $gm) : $gk) ?></option><?php endforeach; ?></select></label>
+    <div><button class="primary gold-btn">تنزيل كشف الرموز (Excel)</button></div>
+  </form>
+  <p class="hint">يصدر رمزاً لكل ربّ أسرة <u>لم يفعّل حسابه بعد</u>، ويعطيك كشفاً مطبوعاً: القطاع، الخيمة، الهوية، الاسم، الرمز. الرموز مخزّنة مشفّرة، فهذا الكشف هو المرة الوحيدة التي تراها. الصلاحية 30 يوماً. أعد التنزيل لإصدار رموز جديدة (تلغي القديمة).</p>
 </section>
 
 <section class="panel">

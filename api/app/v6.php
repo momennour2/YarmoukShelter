@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 date_default_timezone_set('Asia/Hebron');
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /* ---------- Schema ---------- */
 
@@ -38,6 +38,7 @@ function ensure_schema(): void
         if ($cur < SCHEMA_VERSION) {
             $pdo->exec('CREATE TABLE IF NOT EXISTS site_assets (k VARCHAR(40) NOT NULL PRIMARY KEY, mime VARCHAR(60) NOT NULL, data MEDIUMBLOB NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
             $pdo->exec('CREATE TABLE IF NOT EXISTS resident_accounts (national_id VARCHAR(40) NOT NULL PRIMARY KEY, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_login_at DATETIME NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+            $pdo->exec('CREATE TABLE IF NOT EXISTS resident_codes (national_id VARCHAR(40) NOT NULL PRIMARY KEY, code_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
             $adds = [
                 'access_from'     => 'DATETIME NULL',
                 'access_until'    => 'DATETIME NULL',
@@ -564,4 +565,74 @@ function session_rate_limit(string $bucket, int $max, int $seconds): bool
     $w['n']++;
     $_SESSION['rl'][$bucket] = $w;
     return $w['n'] <= $max;
+}
+
+/* =====================================================================
+ * Resident activation codes (replace the guessable "birth year" first login)
+ * ===================================================================== */
+
+/** 8 random characters, no look-alikes (no 0/O/1/I/L). Shown as XXXX-XXXX. */
+function resident_code_issue(string $nid): array
+{
+    $alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    $raw = '';
+    for ($i = 0; $i < 8; $i++) {
+        $raw .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+    $days = max(1, min(365, (int)setting('activation_days', '30')));
+    $exp = date('Y-m-d H:i:s', time() + $days * 86400);
+    db()->prepare('REPLACE INTO resident_codes(national_id,code_hash,expires_at) VALUES(?,?,?)')
+        ->execute([$nid, hash_password($raw), $exp]);
+    return ['code' => substr($raw, 0, 4) . '-' . substr($raw, 4), 'expires' => $exp];
+}
+
+function resident_code_valid(string $nid, string $typed): bool
+{
+    $c = strtoupper((string)preg_replace('/[\s\-]/', '', $typed));
+    if (!preg_match('/^[A-Z0-9]{8}$/', $c)) {
+        return false;
+    }
+    $q = db()->prepare('SELECT code_hash FROM resident_codes WHERE national_id=? AND expires_at>NOW()');
+    $q->execute([$nid]);
+    $h = $q->fetchColumn();
+    return $h !== false && password_verify($c, (string)$h);
+}
+
+/** Per (ID + IP): 5 fails / 15 min.  Per ID from anywhere: 30 fails / 15 min (stops distributed guessing without letting one stranger lock a family out). */
+function resident_throttle_blocked(string $nid): bool
+{
+    $pdo = db();
+    $q = $pdo->prepare("SELECT COUNT(*) FROM login_attempts WHERE kind='resident' AND identifier=? AND success=0 AND created_at > (NOW() - INTERVAL 15 MINUTE)");
+    $q->execute([$nid . '|' . client_ip()]);
+    if ((int)$q->fetchColumn() >= 5) {
+        return true;
+    }
+    $q = $pdo->prepare("SELECT COUNT(*) FROM login_attempts WHERE kind='resident' AND identifier LIKE ? AND success=0 AND created_at > (NOW() - INTERVAL 15 MINUTE)");
+    $q->execute([$nid . '|%']);
+    if ((int)$q->fetchColumn() >= 30) {
+        return true;
+    }
+    $q = $pdo->prepare("SELECT COUNT(*) FROM login_attempts WHERE kind='resident' AND ip_address=? AND success=0 AND created_at > (NOW() - INTERVAL 15 MINUTE)");
+    $q->execute([client_ip()]);
+    return (int)$q->fetchColumn() >= 25;
+}
+
+/** Residents may pick a simple password, but not a guessable one. */
+function check_resident_password(string $pw, string $nid, ?string $birth): void
+{
+    if (mb_strlen($pw) < 6) {
+        throw new RuntimeException('كلمة المرور يجب ألا تقل عن 6 خانات.');
+    }
+    $low = mb_strtolower($pw);
+    $weak = ['123456', '1234567', '12345678', '123456789', '654321', '111111', '000000', '121212', '123123', '112233', '666666', '777777', '888888', '999999', 'password', 'qwerty', 'iloveyou', '555555', '222222', '333333', '444444', 'abc123', '102030'];
+    if (in_array($low, $weak, true) || preg_match('/^(.)\1+$/u', $pw)) {
+        throw new RuntimeException('كلمة المرور سهلة التخمين. اختر غيرها.');
+    }
+    if ($pw === $nid || ($nid !== '' && str_contains($pw, substr($nid, -6)))) {
+        throw new RuntimeException('لا تستخدم رقم الهوية في كلمة المرور.');
+    }
+    $y = $birth ? substr($birth, 0, 4) : '';
+    if ($y !== '' && str_contains($pw, $y)) {
+        throw new RuntimeException('لا تضع سنة الميلاد داخل كلمة المرور.');
+    }
 }

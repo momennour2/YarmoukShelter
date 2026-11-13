@@ -28,9 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nid = normalize_digits(pv('national_id'));
             $secret = normalize_digits((string)($_POST['secret'] ?? ''));
             if (!preg_match('/^\d{5,20}$/', $nid) || $secret === '') {
-                throw new RuntimeException('اكتب رقم الهوية، ثم كلمة المرور (أو سنة الميلاد إن كانت أول مرة).');
+                throw new RuntimeException('اكتب رقم الهوية، ثم كلمة المرور (أو رمز التفعيل إن كانت أول مرة).');
             }
-            if (throttle_blocked('resident', $nid)) {
+            if (resident_throttle_blocked($nid)) {
                 throw new RuntimeException('تم إيقاف المحاولات مؤقتاً بسبب كثرة المحاولات الخاطئة. حاول بعد 15 دقيقة.');
             }
             // The household record (head of household first). Archived / R records never log in.
@@ -40,14 +40,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $acct = $p ? resident_account($nid) : null;
             $firstTime = false;
             if ($p && $acct) {
-                // Returning resident: password only. The birth year no longer works.
+                // Returning resident: password only.
                 $ok = password_verify($secret, (string)$acct['password_hash']);
             } else {
-                // First login: the temporary password is the birth year.
-                $ok = $p && preg_match('/^(19|20)\d{2}$/', $secret) && (int)substr((string)$p['birth_date'], 0, 4) === (int)$secret;
+                // First login: the one-time activation code the camp office handed over (random, expires, single use).
+                $ok = $p && resident_code_valid($nid, $secret);
                 $firstTime = (bool)$ok;
+                if (!$p) {
+                    password_verify($secret, hash_password('dummy')); // same response time whether or not the ID exists
+                }
             }
-            throttle_log('resident', $nid, (bool)$ok);
+            throttle_log('resident', $nid . '|' . client_ip(), (bool)$ok);
             if (!$ok) {
                 throw new RuntimeException('البيانات غير مطابقة. تأكد من رقم الهوية وكلمة المرور.');
             }
@@ -167,11 +170,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <form method="post" class="auth-form <?= $tab === 'resident' ? '' : 'hidden' ?>" data-pane="resident" autocomplete="off">
         <h2>مرحباً بك</h2>
-        <p class="muted">أدخل رقم هويتك وكلمة المرور. <b>أول مرة؟</b> اكتب سنة ميلادك في خانة كلمة المرور، وسيُطلب منك اختيار كلمة مرور خاصة بك.</p>
+        <p class="muted">أدخل رقم هويتك وكلمة المرور. <b>أول مرة؟</b> اكتب رمز التفعيل الذي استلمته من إدارة المخيم في خانة كلمة المرور، ثم اختر كلمة مرور خاصة بك.</p>
         <input type="hidden" name="csrf" value="<?= e(csrf()) ?>">
         <input type="hidden" name="kind" value="resident">
         <label class="field"><span>رقم الهوية</span><input name="national_id" inputmode="numeric" required placeholder="مثال: 123456789"></label>
-        <label class="field"><span>كلمة المرور <small class="muted">(أول مرة: سنة الميلاد)</small></span><input type="password" name="secret" required autocomplete="current-password" placeholder="••••"></label>
+        <label class="field"><span>كلمة المرور <small class="muted">(أول مرة: رمز التفعيل)</small></span><input type="password" name="secret" required autocomplete="current-password" placeholder="••••"></label>
         <button class="primary wide gold-btn">دخول</button>
         <p class="fine">بياناتك محمية. لا يظهر لك إلا ما يخصّك وأسرتك. نسيت كلمة المرور؟ راجع إدارة المخيم لإعادة تعيينها.</p>
       </form>

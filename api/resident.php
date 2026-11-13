@@ -43,15 +43,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'setpass')
         check_csrf();
         $p1 = normalize_digits((string)($_POST['password'] ?? ''));
         $p2 = normalize_digits((string)($_POST['password2'] ?? ''));
-        check_password_rules($p1);
+        $bq = db()->prepare('SELECT birth_date FROM profiles WHERE id=?');
+        $bq->execute([(int)$me['profile_id']]);
+        check_resident_password($p1, (string)$me['national_id'], (string)$bq->fetchColumn());
         if ($p1 !== $p2) {
             throw new RuntimeException('كلمتا المرور غير متطابقتين.');
         }
-        if (preg_match('/^(19|20)\\d{2}$/', $p1)) {
-            throw new RuntimeException('لا تستخدم سنة الميلاد ككلمة مرور؛ اختر كلمة مرور أخرى.');
-        }
         db()->prepare('REPLACE INTO resident_accounts(national_id,password_hash,last_login_at) VALUES(?,?,NOW())')
             ->execute([$me['national_id'], hash_password($p1)]);
+        db()->prepare('DELETE FROM resident_codes WHERE national_id=?')->execute([$me['national_id']]);   // the activation code is single-use
         $_SESSION['resident']['must_set_password'] = 0;
         go('resident.php?pw=1');
     } catch (Throwable $e) {
@@ -201,12 +201,12 @@ if ($page === 'home'):
 elseif ($page === 'setpass'): ?>
 <section class="panel narrow">
   <div class="panel-head"><h2><?= $mustSet ? 'اختر كلمة مرور خاصة بك' : 'تغيير كلمة المرور' ?></h2></div>
-  <?php if ($mustSet): ?><p class="muted">دخلت بسنة الميلاد وهي مؤقتة. اختر كلمة مرور (4 خانات فأكثر) لتدخل بها في المرات القادمة مع رقم هويتك.</p><?php endif; ?>
+  <?php if ($mustSet): ?><p class="muted">دخلت برمز التفعيل وهو يُستعمل مرة واحدة. اختر كلمة مرور (6 خانات فأكثر، ليست رقم هويتك ولا سنة ميلادك) لتدخل بها في المرات القادمة.</p><?php endif; ?>
   <?= flash_box($error, 'err') ?>
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="setpass">
-    <label class="field"><span>كلمة المرور الجديدة</span><input type="password" name="password" minlength="4" required autocomplete="new-password"></label>
-    <label class="field"><span>أعد كتابتها</span><input type="password" name="password2" minlength="4" required autocomplete="new-password"></label>
+    <label class="field"><span>كلمة المرور الجديدة</span><input type="password" name="password" minlength="6" required autocomplete="new-password"></label>
+    <label class="field"><span>أعد كتابتها</span><input type="password" name="password2" minlength="6" required autocomplete="new-password"></label>
     <button class="primary gold-btn">حفظ والمتابعة</button>
   </form>
 </section>
