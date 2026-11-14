@@ -558,7 +558,7 @@ function hh_list_rows(array $sectors): array
 
 function whatsapp_number(): string
 {
-    return preg_replace('/\D/', '', setting('whatsapp_number', '97256390038')) ?? '';
+    return preg_replace('/\D/', '', setting('whatsapp_number', '972569390038')) ?? '';
 }
 
 function whatsapp_button(string $text = 'مرحباً، أحتاج مساعدة بخصوص مخيم اليرموك'): string
