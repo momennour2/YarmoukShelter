@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'request_h
         audit('handle', 'requests', $rid, $decision);
         $msg = 'تم حفظ القرار وإرساله للمؤسسة.';
     } catch (Throwable $ex) {
-        $err = $ex->getMessage();
+        $err = safe_error($ex);
     }
 }
 

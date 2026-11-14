@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ticket_up
         audit('update', 'tickets', $tid, $status);
         $msg = 'تم حفظ التحديث.';
     } catch (Throwable $e) {
-        $err = $e->getMessage();
+        $err = safe_error($e);
     }
 }
 

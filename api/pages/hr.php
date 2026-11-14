@@ -26,7 +26,7 @@ if ($sel) {
         $where .= ' AND (p.full_name LIKE ? OR p.national_id LIKE ? OR p.job_position LIKE ? OR p.tent LIKE ?)';
         array_push($args, "%$q%", "%$q%", "%$q%", "%$q%");
     }
-    $st = db()->prepare("SELECT p.* FROM profiles p WHERE $where ORDER BY FIELD(p.sector,'AS','BS','CS','DS','S'), p.job_position, p.full_name LIMIT 3000");
+    $st = db()->prepare("SELECT p.* FROM profiles p WHERE $where ORDER BY FIELD(p.sector,'AS','BS','CS','DS','S'), ".org_rank_sql('job_position','p').", p.job_position, p.full_name LIMIT 3000");
     $st->execute($args);
     $rows = $st->fetchAll();
 }

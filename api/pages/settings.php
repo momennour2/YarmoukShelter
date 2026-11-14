@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = 'تم حفظ النصوص.';
         }
     } catch (Throwable $ex) {
-        $err = $ex->getMessage();
+        $err = safe_error($ex);
     }
 }
 

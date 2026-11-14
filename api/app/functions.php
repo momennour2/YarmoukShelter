@@ -43,9 +43,71 @@ function module_records(string $page, int|string $limit=300):array{
   $s=allowed_module_sectors('hr');if(!is_admin()){$where=$s?' WHERE (sector IN ('.implode(',',array_fill(0,count($s),'?')).') OR sector IS NULL OR sector=\'\')':' WHERE 1=0';$args=$s;}
   $q=trim((string)($_GET['q']??''));if($q!==''){$where.=($where?' AND ':' WHERE ').'(full_name LIKE ? OR national_id LIKE ? OR job_position LIKE ? OR committee_name LIKE ?)';array_push($args,"%$q%","%$q%","%$q%","%$q%");}
  }
- $sort=(string)($_GET['sort']??($page==='profiles'?'camp':'id'));if(!in_array($sort,$allowedSort,true))$sort='id';$dir=strtolower((string)($_GET['dir']??'desc'))==='asc'?'ASC':'DESC';
- $order="{$sort} {$dir}, id DESC";if($sort==='camp'&&$page==='profiles')$order="FIELD(sector,'A','AS','B','BS','C','CS','D','DS','E','S','S1'), CAST(tent AS UNSIGNED), tent, hh_id, is_household_head DESC, id";elseif($sort==='camp')$order='id DESC';$sql="SELECT * FROM {$table}{$where} ORDER BY {$order}";if($limit!=='all'){$n=max(1,min(10000,(int)$limit));$sql.=' LIMIT '.$n;}
+ $sort=(string)($_GET['sort']??($page==='profiles'?'camp':($page==='hr'?'org':'id')));if(!in_array($sort,$allowedSort,true)&&!($sort==='org'&&$page==='hr'))$sort='id';$dir=strtolower((string)($_GET['dir']??'desc'))==='asc'?'ASC':'DESC';
+ $order="{$sort} {$dir}, id DESC";if($sort==='camp'&&$page==='profiles')$order=profile_order_sql('');elseif($sort==='tent'&&$page==='profiles')$order="(tent NOT REGEXP '^[0-9]+$') {$dir}, CAST(tent AS UNSIGNED) {$dir}, tent {$dir}, hh_id, is_household_head DESC, id";elseif($sort==='org'&&$page==='hr')$order=org_rank_sql('job_position').', full_name, id';elseif($sort==='camp')$order='id DESC';$sql="SELECT * FROM {$table}{$where} ORDER BY {$order}";if($limit!=='all'){$n=max(1,min(10000,(int)$limit));$sql.=' LIMIT '.$n;}
  $q=db()->prepare($sql);$q->execute($args);return $q->fetchAll();
+}
+/** Same order as the Excel macro Sort_Order: sector letter A,B,C,D,S,E (AS belongs to A, S1 to S, ...) -> Tent (numbers first, ascending)
+ *  -> HH ID -> head of household first (HH=Yes) -> Birth Date ascending (blank last). */
+function profile_order_sql(string $alias = ''): string
+{
+    $p = $alias !== '' ? $alias . '.' : '';
+    return "FIELD(LEFT({$p}sector,1),'E','S','D','C','B','A') DESC, ({$p}tent IS NULL OR {$p}tent=''), ({$p}tent NOT REGEXP '^[0-9]+$'), CAST({$p}tent AS UNSIGNED), {$p}tent, "
+        . "({$p}hh_id NOT REGEXP '^[0-9]+$'), CAST({$p}hh_id AS UNSIGNED), {$p}hh_id, {$p}is_household_head DESC, ({$p}birth_date IS NULL), {$p}birth_date, {$p}id";
+}
+/** Administrative structure rank of a job title (1 = chairman ... 23 = buffet chef, 99 = no administrative rank).
+ *  Titles are compared ignoring spaces, hamza forms and the common spelling قاطع/قطاع, so small typos in the data do not break the order. */
+function org_titles(): array
+{
+    return [
+        1 => ['رئيس مجلس الإدارة + مدير مركز الإيواء'],
+        2 => ['عضو مجلس إدارة + نائب مدير مركز الإيواء + منسق اللجان'],
+        3 => ['عضو مجلس إدارة + مسؤول التوزيعات الإغاثية'],
+        4 => ['عضو مجلس إدارة + مسؤول المخزن والرقابة'],
+        5 => ['عضو مجلس إدارة'],
+        6 => ['مسؤول العمليات التنفيذي'],
+        7 => ['مسؤول المشاريع'],
+        8 => ['مشرف القطاعات'],
+        9 => ['مسؤول الخدمات والصيانة'],
+        10 => ['مسؤول إعلامي + مسؤول سجل المستفدين', 'مسؤول إعلامي + مسؤول سجل المستفيدين'],
+        11 => ['مساعد مالي'],
+        12 => ['مسؤول قطاع D'],
+        13 => ['مسؤول قطاع B'],
+        14 => ['مسؤول قطاع A'],
+        15 => ['مسؤول قطاع C'],
+        16 => ['مساعد مشرف القطاعات'],
+        17 => ['نائب مسؤول قطاع C'],
+        18 => ['نائب قطاع A', 'نائب مسؤول قطاع A'],
+        19 => ['نائب مسؤول قطاع B'],
+        20 => ['نائب مسؤول قطاع D'],
+        21 => ['مساعد لجان'],
+        22 => ['مساعد ميداني'],
+        23 => ['شيف بوفيه', 'شيف بوفية'],
+    ];
+}
+function org_norm(string $s): string
+{
+    return strtr(str_replace(' ', '', $s), ['قاطع' => 'قطاع', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ى' => 'ي', 'ة' => 'ه', 'مسئول' => 'مسؤول']);
+}
+function org_rank_sql(string $col = 'job_position', string $alias = ''): string
+{
+    $c = ($alias !== '' ? $alias . '.' : '') . $col;
+    $expr = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({$c},''),' ',''),'قاطع','قطاع'),'أ','ا'),'إ','ا'),'آ','ا'),'ى','ي'),'ة','ه'),'مسئول','مسؤول'),CHAR(160),'')";
+    $sql = 'CASE';
+    foreach (org_titles() as $rank => $titles) {
+        $in = implode(',', array_map(fn($t) => "'" . str_replace("'", "''", org_norm($t)) . "'", $titles));
+        $sql .= " WHEN {$expr} IN ({$in}) THEN {$rank}";
+    }
+    return $sql . " WHEN {$c} LIKE '%شيف%' THEN 23 ELSE 99 END";
+}
+/** Message that is safe to show: our own RuntimeExceptions pass through, database / internal errors are hidden and logged. */
+function safe_error(Throwable $e): string
+{
+    if ($e instanceof PDOException || !($e instanceof RuntimeException || $e instanceof InvalidArgumentException)) {
+        error_log(get_class($e) . ': ' . $e->getMessage());
+        return 'حدث خطأ غير متوقع. حاول مرة أخرى، وإن تكرر أبلغ مدير النظام.';
+    }
+    return $e->getMessage();
 }
 require_once __DIR__.'/v5.php';
 require_once __DIR__.'/v6.php';

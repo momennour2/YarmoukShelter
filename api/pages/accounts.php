@@ -72,19 +72,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ->execute([$un, $name, $roleSel, $inst ?: null, implode(',', $secs) ?: null, hash_password($pw), $active, $accFrom, $accUntil, $accLocked, $hiddenCsv]);
                     $uid = (int)$pdo->lastInsertId();
                 } else {
-                    $cq = $pdo->prepare('SELECT username FROM users WHERE id=?');
+                    $cq = $pdo->prepare('SELECT username,role FROM users WHERE id=?');
                     $cq->execute([$uid]);
-                    $cur = $cq->fetchColumn();
-                    if ($cur === false) {
+                    $curRow = $cq->fetch();
+                    if (!$curRow) {
                         throw new RuntimeException('المستخدم غير موجود.');
                     }
-                    if ($cur === 'admin') {
+                    $cur = (string)$curRow['username'];
+                    $self = $uid === (int)(user()['id'] ?? 0);
+                    if ($cur === 'admin' || $self) {      // the general manager can never demote / disable / lock himself
                         $roleSel = 'general_manager';
                         $active = 1;
-                    }
-                    if ($cur === 'admin') {
                         $accFrom = $accUntil = $hiddenCsv = null;
                         $accLocked = 0;
+                    }
+                    /* ---- rename ---- */
+                    $newUn = normalize_username(pv('username'));
+                    if ($newUn !== '' && $newUn !== $cur) {
+                        if ($roleSel === 'general_manager') {
+                            if (!preg_match('/^[A-Za-z0-9._-]{3,40}$/', $newUn)) {
+                                throw new RuntimeException('اسم مستخدم المدير العام: من 3 إلى 40 خانة (حروف إنجليزية أو أرقام أو . _ -).');
+                            }
+                        } elseif (!username_format_ok($newUn)) {
+                            throw new RuntimeException('اسم المستخدم: حرفان إنجليزيان ثم شرطة ثم رقم الهوية، مثال AB-123456789.');
+                        }
+                        $dq = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username=? AND id<>?');
+                        $dq->execute([$newUn, $uid]);
+                        if ((int)$dq->fetchColumn() > 0) {
+                            throw new RuntimeException('اسم المستخدم مستخدم لحساب آخر.');
+                        }
+                        $pdo->prepare('UPDATE users SET username=? WHERE id=?')->execute([$newUn, $uid]);
+                        if ($self) {
+                            $_SESSION['user']['username'] = $newUn;
+                        }
+                        audit('rename_account', 'users', $uid, $cur . ' -> ' . $newUn);
                     }
                     $pdo->prepare('UPDATE users SET full_name=?,role=?,institution_id=?,assigned_sectors=?,is_active=?,access_from=?,access_until=?,access_locked=?,hidden_features=? WHERE id=?')
                         ->execute([$name, $roleSel, $inst ?: null, implode(',', $secs) ?: null, $active, $accFrom, $accUntil, $accLocked, $hiddenCsv, $uid]);
@@ -117,6 +138,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd->execute([$lock, $uid]);
             audit($lock ? 'lock_account' : 'unlock_account', 'users', $uid);
             $msg = $lock ? 'تم إغلاق الحساب فوراً.' : 'تم فتح الحساب.';
+        }
+
+        /* ---------- Delete a staff / institution account ---------- */
+        if ($do === 'user_delete') {
+            $uid = (int)($_POST['id'] ?? 0);
+            if ($uid === (int)(user()['id'] ?? 0)) {
+                throw new RuntimeException('لا يمكنك حذف حسابك الحالي.');
+            }
+            $dq = db()->prepare('SELECT username,role FROM users WHERE id=?');
+            $dq->execute([$uid]);
+            $row = $dq->fetch();
+            if (!$row) {
+                throw new RuntimeException('المستخدم غير موجود.');
+            }
+            if ($row['username'] === 'admin' || $row['role'] === 'general_manager') {
+                throw new RuntimeException('لا يمكن حذف حساب مدير عام. غيّر دوره أولاً إن أردت حذفه.');
+            }
+            try {
+                db()->prepare('DELETE FROM users WHERE id=?')->execute([$uid]);
+            } catch (PDOException $pe) {
+                if (($pe->errorInfo[0] ?? '') === '23000') {
+                    throw new RuntimeException('لا يمكن حذف هذا الحساب لأن له سجلات مرتبطة. أغلقه بدلاً من حذفه.');
+                }
+                throw $pe;
+            }
+            audit('delete_account', 'users', null, (string)$row['username']);
+            $msg = 'تم حذف الحساب ' . $row['username'] . ' نهائياً.';
         }
 
         /* ---------- Reset a resident's password (back to birth-year first login) ---------- */
@@ -153,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = 'تم تحديث حالة المؤسسة.';
         }
     } catch (Throwable $ex) {
-        $err = $ex->getMessage();
+        $err = safe_error($ex);
     }
 }
 
@@ -173,7 +221,7 @@ echo flash_box($msg) . flash_box($err, 'err');
   <form method="post" id="acc-form">
     <input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="user_save"><input type="hidden" name="user_id" value="<?= (int)($edit['id'] ?? 0) ?>">
     <div class="form-grid">
-      <label class="field"><span>اسم المستخدم (حرفان - رقم الهوية)</span><input name="username" dir="ltr" placeholder="AB-123456789" value="<?= e($edit['username'] ?? '') ?>" <?= $edit ? 'readonly' : 'required' ?>></label>
+      <label class="field"><span>اسم المستخدم (حرفان - رقم الهوية؛ المدير العام: اسم حر)</span><input name="username" dir="ltr" placeholder="AB-123456789" value="<?= e($edit['username'] ?? '') ?>" required></label>
       <label class="field"><span>الاسم الكامل</span><input name="full_name" value="<?= e($edit['full_name'] ?? '') ?>" required></label>
       <label class="field"><span>الدور</span><select name="role" id="role-sel">
         <?php foreach (roles() as $k => $l): ?><option value="<?= e($k) ?>" <?= (($edit['role'] ?? 'staff') === $k) ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
@@ -220,7 +268,8 @@ echo flash_box($msg) . flash_box($err, 'err');
       <td><small><?= $u['access_from'] ? 'من ' . e(substr((string)$u['access_from'], 0, 16)) : '' ?> <?= $u['access_until'] ? 'إلى ' . e(substr((string)$u['access_until'], 0, 16)) : '' ?><?= (!$u['access_from'] && !$u['access_until']) ? '—' : '' ?></small></td>
       <td><?= e((string)$u['last_login_at']) ?></td>
       <td class="btn-row"><a href="?page=accounts&edit=<?= (int)$u['id'] ?>">تعديل</a>
-        <?php if ($r !== 'general_manager'): ?><form method="post"><input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="user_lock"><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="lock" value="<?= $u['access_locked'] ? 0 : 1 ?>"><button class="text-button"><?= $u['access_locked'] ? 'فتح' : 'إغلاق فوري' ?></button></form><?php endif; ?></td></tr>
+        <?php if ($r !== 'general_manager'): ?><form method="post"><input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="user_lock"><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><input type="hidden" name="lock" value="<?= $u['access_locked'] ? 0 : 1 ?>"><button class="text-button"><?= $u['access_locked'] ? 'فتح الحساب' : 'إغلاق فوري' ?></button></form>
+        <form method="post" onsubmit="return confirm('حذف الحساب <?= e($u['username']) ?> نهائياً؟ لا يمكن التراجع.')"><input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="do" value="user_delete"><input type="hidden" name="id" value="<?= (int)$u['id'] ?>"><button class="text-button danger-link">حذف</button></form><?php endif; ?></td></tr>
   <?php endforeach; ?>
   </tbody></table></div>
 </section>

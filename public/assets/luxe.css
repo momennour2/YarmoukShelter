@@ -320,7 +320,7 @@ tr.total td{background:#f8efd5;font-weight:700}
 @media print{.partner-strip,.brand-under{display:none}}
 
 /* ---------- V6: religious reminder toast ---------- */
-.dhikr-toast{position:fixed;inset-inline-start:20px;bottom:20px;z-index:9999;max-width:min(380px,calc(100vw - 40px));display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border-radius:16px;background:linear-gradient(135deg,var(--navy3),var(--navy));color:var(--gold2);font:500 17px/1.9 var(--display);box-shadow:var(--shadow);border:1px solid rgba(230,207,143,.45);opacity:0;transform:translateY(14px);transition:opacity .6s,transform .6s}
+.dhikr-toast{position:fixed;left:20px;right:auto;bottom:84px;z-index:9999;max-width:min(380px,calc(100vw - 40px));display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border-radius:16px;background:linear-gradient(135deg,var(--navy3),var(--navy));color:var(--gold2);font:500 17px/1.9 var(--display);box-shadow:var(--shadow);border:1px solid rgba(230,207,143,.45);opacity:0;transform:translateY(14px);transition:opacity .6s,transform .6s}
 .dhikr-toast.on{opacity:1;transform:none}
 .dhikr-toast button{background:none;border:0;color:var(--gold2);font-size:20px;cursor:pointer;line-height:1;padding:0}
 @media print{.dhikr-toast{display:none}}
@@ -329,3 +329,29 @@ tr.total td{background:#f8efd5;font-weight:700}
 .wa-float{position:fixed;inset-inline-end:18px;bottom:18px;z-index:9998;display:inline-flex;align-items:center;gap:8px;padding:11px 16px;border-radius:999px;background:#1f8a5b;color:#fff;font:600 14px var(--body);text-decoration:none;box-shadow:0 10px 26px rgba(0,0,0,.28)}
 .wa-float:hover{background:#17724a}
 @media print{.wa-float{display:none}}
+
+/* ---- collapsible sidebar (desktop) ---- */
+.sb-toggle,.sb-edge{display:none}
+@media (min-width:651px){
+  .sb-edge{display:block;position:fixed;top:0;bottom:0;inset-inline-start:0;width:14px;z-index:6}
+  .sb-toggle{display:grid;place-items:center;position:fixed;z-index:7;top:50%;margin-top:-34px;width:28px;height:68px;padding:0;cursor:pointer;
+    inset-inline-start:calc(var(--sbw,286px) - 1px);border:1px solid rgba(255,255,255,.35);border-inline-start:0;
+    border-start-end-radius:16px;border-end-end-radius:16px;
+    background:linear-gradient(135deg,#d9b45a,#a8832f);color:#10253d;box-shadow:0 8px 22px rgba(10,21,48,.35);opacity:.92}
+  .sb-toggle:hover{opacity:1;filter:brightness(1.08)}
+  .sb-toggle svg{transition:transform .35s ease}
+  html[dir=rtl] .sb-toggle svg{transform:rotate(0deg)}          /* open: arrow points to the side the menu hides to */
+  html[dir=ltr] .sb-toggle svg{transform:rotate(180deg)}
+  html[dir=rtl].sb-collapsed .sb-toggle svg{transform:rotate(180deg)}
+  html[dir=ltr].sb-collapsed .sb-toggle svg{transform:rotate(0deg)}
+  html.sb-collapsed .sb-toggle{inset-inline-start:0}
+  html.sb-ready .sidebar{transition:transform .38s cubic-bezier(.22,.8,.3,1),box-shadow .38s}
+  html.sb-ready .main{transition:margin .38s cubic-bezier(.22,.8,.3,1),width .38s cubic-bezier(.22,.8,.3,1)}
+  html.sb-ready .sb-toggle{transition:inset-inline-start .38s cubic-bezier(.22,.8,.3,1),opacity .2s}
+  html[dir=rtl].sb-collapsed .sidebar{transform:translateX(calc(100% + 40px))}
+  html[dir=ltr].sb-collapsed .sidebar{transform:translateX(calc(-100% - 40px))}
+  html.sb-collapsed .sidebar.peek{transform:none;box-shadow:0 0 60px rgba(10,21,48,.55)}
+  html.sb-collapsed .sidebar.peek ~ .main{margin-inline-start:0}
+  html.sb-collapsed .main{width:100%;margin-inline-start:0}
+}
+@media print{.sb-toggle,.sb-edge{display:none!important}}

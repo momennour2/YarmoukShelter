@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = 'تم حذف السجل.';
         }
     } catch (Throwable $ex) {
-        $err = $ex->getMessage();
+        $err = safe_error($ex);
     }
 }
 

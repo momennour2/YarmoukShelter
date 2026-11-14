@@ -3,7 +3,7 @@
 $dataToolsError=''; $dataToolsNotice=''; $dataToolsStats=null;
 if(!can('data_tools','view')){http_response_code(403);exit('Import / Export access denied');}
 $dataSets=[
- 'profiles'=>['table'=>'profiles','perm'=>'profiles','date'=>'added_at','title'=>'Profiles','headers'=>['Sector','Tent','Tent Type','Tent Condition','ID','Name','Gender','Birth Date','Social Status','F. Member','Death Date','HH','HHID','Hospitality','Partner Name','Motherhood','War Injury','Disability','Chronic Diseases','House Status','Region','Phone','Other Phone','Original Address','Nearest Place','Shelter Address','FC','FC No','Job Position','Note','A/R Date']],
+ 'profiles'=>['table'=>'profiles','perm'=>'profiles','date'=>'added_at','title'=>'Profiles','headers'=>['Sector','Tent','Tent Type','Tent Condition','ID','Name','Gender','Birth Date','Social Status','F. Member','Death Date','HH','HH ID','Hospitality','Partner Name','Motherhood','War Injury','Disability','Chronic Diseases','House Status','Region','Phone','Other Phone','Original Address','Nearest Place','Shelter Address','FC','FC No','Job Position','Note','A/R Date']],
  'beneficiaries'=>['table'=>'beneficiaries','perm'=>'beneficiaries','date'=>'delivery_date','title'=>'BNFs','headers'=>['Distribution Type','Sector','Tent','Beneficiary Name','ID','Category','Package','Amount','Delivery Date','Donor','Members','Phone','Note']],
  'finance'=>['table'=>'finance','perm'=>'finance','date'=>'transaction_date','title'=>'Finance','headers'=>['Flow','Date','Category','Item','Amount','Note']],
  'aids'=>['table'=>'aids','perm'=>'aids','date'=>'aid_date','title'=>'Aids','headers'=>['Date','Package','Quantity','Unit','Donor','Note']],
@@ -24,24 +24,62 @@ if (!function_exists('dt_to_utf8')) { function dt_to_utf8(string $raw):string{
     if(mb_check_encoding($raw,'UTF-8'))return $raw;
     return mb_convert_encoding($raw,'UTF-8','Windows-1256');
 } }
+/* ---- zip container reader (ZipArchive when present, otherwise pure PHP + gzinflate) ---- */
+if (!function_exists('dt_zip_index')) { function dt_zip_index(string $bin):array{
+    $n=strlen($bin);$e=strrpos($bin,"PK\x05\x06");if($e===false||$e+22>$n)throw new RuntimeException('ملف Excel تالف أو ليس بصيغة xlsx.');
+    $h=unpack('vdisk/vcd/ventries/vtotal/Vsize/Voffset',substr($bin,$e+4,16));$p=(int)$h['offset'];$out=[];
+    for($i=0;$i<(int)$h['total'];$i++){
+        if($p+46>$n||substr($bin,$p,4)!=="PK\x01\x02")break;
+        $c=unpack('vmade/vneed/vflags/vmethod/vtime/vdate/Vcrc/Vcsize/Vusize/vnlen/velen/vclen',substr($bin,$p+4,42));
+        $name=substr($bin,$p+46,(int)$c['nlen']);$out[$name]=['m'=>(int)$c['method'],'cs'=>(int)$c['csize'],'us'=>(int)$c['usize'],'off'=>(int)unpack('V',substr($bin,$p+42,4))[1]];
+        $p+=46+(int)$c['nlen']+(int)$c['elen']+(int)$c['clen'];
+    }
+    return $out;
+} }
+if (!function_exists('dt_zip_get')) { function dt_zip_get(string $bin,array $idx,string $name):?string{
+    if(!isset($idx[$name]))return null;$f=$idx[$name];$o=$f['off'];if(substr($bin,$o,4)!=="PK\x03\x04")return null;
+    $l=unpack('vnlen/velen',substr($bin,$o+26,4));$d=substr($bin,$o+30+(int)$l['nlen']+(int)$l['elen'],$f['cs']);
+    if($f['m']===0)return $d;
+    if($f['m']===8){if(!function_exists('gzinflate'))throw new RuntimeException('إضافة zlib غير متوفرة في PHP.');$r=@gzinflate($d);return $r===false?null:$r;}
+    return null;
+} }
+if (!function_exists('dt_xml_text')) { function dt_xml_text(string $x):string{return html_entity_decode($x,ENT_QUOTES|ENT_XML1,'UTF-8');} }
+if (!function_exists('dt_xml_attrs')) { function dt_xml_attrs(string $tag):array{$a=[];if(preg_match_all('/([A-Za-z_:][\w:.-]*)\s*=\s*("([^"]*)"|\'([^\']*)\')/',$tag,$m,PREG_SET_ORDER))foreach($m as $x)$a[$x[1]]=$x[3]!==''?$x[3]:($x[4]??'');return $a;} }
+if (!function_exists('dt_si_text')) { function dt_si_text(string $si):string{$si=preg_replace('#<rPh\b.*?</rPh>#s','',$si);$t='';if(preg_match_all('#<t\b[^>]*>(.*?)</t>#s',$si,$m))foreach($m[1] as $x)$t.=dt_xml_text($x);return $t;} }
 if (!function_exists('dt_read_xlsx')) { function dt_read_xlsx(string $path,string $wantTitle):array{
-    if(!class_exists('ZipArchive'))throw new RuntimeException('لقراءة ملفات Excel فعّل إضافة zip في PHP، أو احفظ الملف بصيغة CSV UTF-8.');
-    $z=new ZipArchive();if($z->open($path)!==true)throw new RuntimeException('تعذّر فتح ملف Excel.');
-    $shared=[];$ss=$z->getFromName('xl/sharedStrings.xml');
-    if($ss!==false){$x=@simplexml_load_string($ss);if($x){foreach($x->si as $si){$t='';if(isset($si->t))$t.=(string)$si->t;foreach($si->r as $r)$t.=(string)$r->t;$shared[]=$t;}}}
-    $wb=@simplexml_load_string((string)$z->getFromName('xl/workbook.xml'));$rels=@simplexml_load_string((string)$z->getFromName('xl/_rels/workbook.xml.rels'));
+    $bin=file_get_contents($path);if($bin===false||$bin==='')throw new RuntimeException('تعذّر فتح ملف Excel.');
+    $idx=dt_zip_index($bin);
+    $get=function(string $name)use($bin,$idx){return dt_zip_get($bin,$idx,$name);};
+    $shared=[];$ss=$get('xl/sharedStrings.xml');
+    if($ss!==null&&preg_match_all('#<si\b[^>]*>(.*?)</si>#s',$ss,$m))foreach($m[1] as $si)$shared[]=dt_si_text($si);
+    $wb=(string)$get('xl/workbook.xml');$rels=(string)$get('xl/_rels/workbook.xml.rels');$map=[];
+    if(preg_match_all('#<Relationship\b[^>]*>#',$rels,$m))foreach($m[0] as $tag){$a=dt_xml_attrs($tag);if(isset($a['Id'],$a['Target']))$map[$a['Id']]=$a['Target'];}
     $target=null;$first=null;
-    if($wb&&$rels){$map=[];foreach($rels->Relationship as $r)$map[(string)$r['Id']]=(string)$r['Target'];
-        foreach($wb->sheets->sheet as $sh){$rid=(string)$sh->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'];$tg=$map[$rid]??null;if(!$tg)continue;$tg=ltrim($tg,'/');if(strpos($tg,'xl/')!==0)$tg='xl/'.$tg;if($first===null)$first=$tg;if($target===null&&strcasecmp(trim((string)$sh['name']),$wantTitle)===0)$target=$tg;}}
+    if(preg_match_all('#<sheet\b[^>]*>#',$wb,$m))foreach($m[0] as $tag){$a=dt_xml_attrs($tag);$rid=$a['r:id']??null;$tg=$rid!==null?($map[$rid]??null):null;if(!$tg)continue;$tg=ltrim($tg,'/');if(strpos($tg,'xl/')!==0)$tg='xl/'.$tg;if($first===null)$first=$tg;if($target===null&&strcasecmp(trim(dt_xml_text($a['name']??'')),$wantTitle)===0)$target=$tg;}
     $target=$target?:($first?:'xl/worksheets/sheet1.xml');
-    $xml=$z->getFromName($target);if($xml===false)throw new RuntimeException('لم أجد الورقة داخل ملف Excel.');
-    $sx=@simplexml_load_string($xml);if(!$sx)throw new RuntimeException('ملف Excel تالف أو غير مدعوم.');
+    $xml=$get($target);if($xml===null)throw new RuntimeException('لم أجد الورقة داخل ملف Excel.');
     $rows=[];
-    foreach($sx->sheetData->row as $row){$cells=[];$max=-1;
-        foreach($row->c as $c){$ref=(string)$c['r'];$col=0;if(preg_match('/^([A-Z]+)/',$ref,$m)){foreach(str_split($m[1]) as $ch)$col=$col*26+(ord($ch)-64);$col--;}
-            $t=(string)$c['t'];if($t==='s')$val=$shared[(int)$c->v]??'';elseif($t==='inlineStr'){$val='';foreach($c->is->t as $tt)$val.=(string)$tt;if(isset($c->is->r))foreach($c->is->r as $r)$val.=(string)$r->t;}else $val=(string)$c->v;
-            $cells[$col]=$val;if($col>$max)$max=$col;}
-        $line=[];for($i=0;$i<=$max;$i++)$line[]=$cells[$i]??'';$rows[]=$line;}
+    if(preg_match_all('#<row\b[^>]*?(?:/>|>(.*?)</row>)#s',$xml,$rm)){
+        foreach($rm[1] as $rowXml){
+            $cells=[];$max=-1;
+            if($rowXml!==''&&preg_match_all('#<c\b([^>]*?)(?:/>|>(.*?)</c>)#s',$rowXml,$cm,PREG_SET_ORDER)){
+                foreach($cm as $c){
+                    $a=dt_xml_attrs($c[1]);$ref=$a['r']??'';$t=$a['t']??'';$body=$c[2]??'';$col=0;
+                    if(preg_match('/^([A-Z]+)/',$ref,$mm)){foreach(str_split($mm[1]) as $ch)$col=$col*26+(ord($ch)-64);$col--;}else $col=$max+1;
+                    $val='';
+                    if($t==='inlineStr'){$val=dt_si_text($body);}
+                    elseif(preg_match('#<v\b[^>]*>(.*?)</v>#s',$body,$vm)){$raw=dt_xml_text($vm[1]);
+                        if($t==='s')$val=$shared[(int)$raw]??'';
+                        elseif($t==='b')$val=$raw==='1'?'TRUE':'FALSE';
+                        elseif($t==='e')$val='';
+                        else $val=$raw;}
+                    $cells[$col]=$val;if($col>$max)$max=$col;
+                }
+            }
+            $line=[];for($i=0;$i<=$max;$i++)$line[]=$cells[$i]??'';$rows[]=$line;
+        }
+    }
+    if(!$rows)throw new RuntimeException('ملف Excel لا يحتوي بيانات في الورقة المطلوبة.');
     return $rows;
 } }
 if (!function_exists('dt_read_rows')) { function dt_read_rows(string $path,string $sheetTitle):array{
@@ -65,8 +103,17 @@ if (!function_exists('dt_flow_value')) { function dt_flow_value($v):?string{
 if(isset($_GET['template']) && isset($dataSets[$_GET['template']])){$key=$_GET['template'];$d=$dataSets[$key];if(!can($d['perm'],'create')){http_response_code(403);exit('Import permission denied');}$sample=array_fill(0,count($d['headers']),'');dt_send_csv('Yarmouk_'.$key.'_template.xlsx',$d['headers'],[$sample]);}
 if(isset($_GET['export_data']) && isset($dataSets[$_GET['export_data']])){$key=$_GET['export_data'];$d=$dataSets[$key];if(!can($d['perm'],'export')){http_response_code(403);exit('Export permission denied');}$from=dt_date($_GET['from']??'');$to=dt_date($_GET['to']??'');if(!$from||!$to||$from>$to){http_response_code(400);exit('Valid From and To dates are required');}$table=$d['table'];$date=$d['date'];$where=" WHERE DATE($date) BETWEEN ? AND ?";$args=[$from,$to];if(in_array($key,['profiles','beneficiaries','hr'],true)&&!is_admin()){$allowed=allowed_module_sectors($d['perm'],'view');if(!$allowed){$where.=' AND 1=0';}else{$sectorCol=$key==='beneficiaries'?'allocation_sector':'sector';$where.=' AND '.$sectorCol.' IN ('.implode(',',array_fill(0,count($allowed),'?')).')';$args=array_merge($args,$allowed);}}if($key==='profiles')$where.=" AND sector<>'R' AND archived_at IS NULL";
  $cols=['profiles'=>['sector','tent','tent_type','tent_condition','national_id','full_name','gender','birth_date','social_status','family_member','death_date','is_household_head','hh_id','hospitality','partner_name','motherhood','war_injury','disability','chronic_diseases','house_status','region','phone','other_phone','original_address','nearest_place','shelter_address','fc','fc_no','job_position','note','added_at'],'beneficiaries'=>['distribution_type','sector','allocation_sector','tent','beneficiary_name','national_id','category','package','amount','delivery_date','donor','members','phone','note'],'finance'=>['flow','transaction_date','category','item','amount','note'],'aids'=>['aid_date','package','quantity','unit','donor','note'],'hr'=>['sector','job_position','full_name','national_id','gender','age','social_status','phone','committee_name','created_at'],'storage'=>['item_code','item_date','category','item_name','in_qty','unit','out_qty','note']][$key];
- if($key==='profiles'&&!is_admin()&&!can('profiles','view_sensitive'))$cols=array_values(array_diff($cols,['national_id','phone','other_phone','fc_no','war_injury','disability','chronic_diseases']));if($key==='beneficiaries'&&!is_admin()&&!can('beneficiaries','view_sensitive'))$cols=array_values(array_diff($cols,['national_id','phone']));
- $q=db()->prepare('SELECT '.implode(',',$cols)." FROM $table$where ORDER BY $date,id");$q->execute($args);$rows=$q->fetchAll(PDO::FETCH_NUM);audit('export',$key,null,"XLSX $from to $to");dt_send_csv('Yarmouk_'.$key.'_'.$from.'_to_'.$to.'.xlsx',$cols,$rows);}
+ $hdr=$d['headers'];$orderCol=$date;
+ if($key==='beneficiaries'){$i=array_search('allocation_sector',$cols,true);if($i!==false)array_splice($cols,$i,1);}
+ if($key==='hr'){$i=array_search('created_at',$cols,true);if($i!==false)array_splice($cols,$i,1);}
+ $hdr=array_slice($hdr,0,count($cols));$pairs=array_combine($cols,$hdr);
+ if($key==='profiles'&&!is_admin()&&!can('profiles','view_sensitive'))$pairs=array_diff_key($pairs,array_flip(['national_id','phone','other_phone','fc_no','war_injury','disability','chronic_diseases']));
+ if($key==='beneficiaries'&&!is_admin()&&!can('beneficiaries','view_sensitive'))$pairs=array_diff_key($pairs,array_flip(['national_id','phone']));
+ $cols=array_keys($pairs);$hdr=array_values($pairs);
+ $orderBy=$key==='profiles'?profile_order_sql(''):($key==='hr'?org_rank_sql('job_position').', full_name, id':"$date,id");
+ $q=db()->prepare('SELECT '.implode(',',$cols)." FROM $table$where ORDER BY $orderBy");$q->execute($args);$rows=$q->fetchAll(PDO::FETCH_NUM);
+ if($key==='profiles'){$hi=array_search('is_household_head',$cols,true);if($hi!==false)foreach($rows as &$rw){$rw[$hi]=((int)$rw[$hi]===1)?'Yes':'No';}unset($rw);}
+ audit('export',$key,null,"XLSX $from to $to");dt_send_csv('Yarmouk_'.$key.'_'.$from.'_to_'.$to.'.xlsx',$hdr,$rows);}
 if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['do']??'')==='import_csv'){
  try{check_csrf();$key=(string)($_POST['dataset']??'');if(!isset($dataSets[$key]))throw new RuntimeException('نوع البيانات غير معروف');$d=$dataSets[$key];if(!can($d['perm'],'create'))throw new RuntimeException('لا تملك صلاحية الاستيراد لهذا القسم');if(empty($_FILES['csv_file']['tmp_name'])||!is_uploaded_file($_FILES['csv_file']['tmp_name']))throw new RuntimeException('اختر ملف CSV أولاً');if($_FILES['csv_file']['size']>25*1024*1024)throw new RuntimeException('الحد الأقصى لحجم الملف 25MB');$allRows=dt_read_rows($_FILES['csv_file']['tmp_name'],$d['title']);if(!$allRows)throw new RuntimeException('الملف فارغ');
  $aliases=['id'=>'id','national id'=>'id','f. member'=>'f. member','hh id'=>'hhid','hhid'=>'hhid','beneficiary\'s name'=>'beneficiary name','beneficiary name'=>'beneficiary name','transaction date'=>'date','aid date'=>'date','item date'=>'date','full name'=>'name','name - 0'=>'name','fc no'=>'fc no','a/r date'=>'a/r date','add / remove date'=>'a/r date','in qty'=>'in qty','out qty'=>'out qty',
@@ -101,7 +148,7 @@ $cols=array_keys($v);$st=$pdo->prepare('INSERT INTO aids('.implode(',',$cols).')
  }else{$date=dt_date($get('date'));if(!$date||(($get('in qty')??'')!==''&&!is_numeric($get('in qty')))||(($get('out qty')??'')!==''&&!is_numeric($get('out qty'))))throw new RuntimeException('التاريخ والكميات غير صحيحة');$v=['item_code'=>$get('item code')?:null,'item_date'=>$date,'category'=>$get('category'),'item_name'=>$get('item'),'in_qty'=>$get('in qty')?:0,'unit'=>$get('unit'),'out_qty'=>$get('out qty')?:0,'note'=>$get('note')];// Duplicate rows are imported; no content-based de-duplication.
 $cols=array_keys($v);$st=$pdo->prepare('INSERT INTO warehouse_items('.implode(',',$cols).') VALUES('.implode(',',array_fill(0,count($cols),'?')).')');$st->execute(array_values($v));}
  $inserted++;
- }catch(Throwable $e){$errors[]='السطر '.$rowNo.': '.$e->getMessage();if(count($errors)>=20)break;}}
+ }catch(Throwable $e){$errors[]='السطر '.$rowNo.': '.($e instanceof PDOException?'قيمة لا تناسب قاعدة البيانات (نص طويل جداً أو نوع غير صحيح) — رمز '.($e->errorInfo[1]??$e->getCode()):$e->getMessage());if(count($errors)>=20)break;}}
  if($errors){$pdo->rollBack();$dataToolsError='تم إلغاء الاستيراد بالكامل لحماية البيانات. '.implode(' | ',$errors);}else{$pdo->commit();audit('import',$key,null,"Inserted $inserted; blank rows skipped $skipped");$dataToolsNotice="اكتمل الاستيراد بنجاح. تمت إضافة $inserted سجل، وتم تجاهل $skipped صفاً فارغاً أو غير صالح من نوع البيانات.";$dataToolsStats=['inserted'=>$inserted,'skipped'=>$skipped];}
- }catch(Throwable $e){if(db()->inTransaction())db()->rollBack();$dataToolsError=$e->getMessage();}}
+ }catch(Throwable $e){if(db()->inTransaction())db()->rollBack();$dataToolsError=safe_error($e);}}
 ?>

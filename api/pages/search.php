@@ -176,10 +176,11 @@ if ($view === 'households') {
 }
 $sortMap = ['sector' => 'p.sector', 'tent' => 'p.tent', 'full_name' => 'p.full_name', 'age' => 'p.birth_date', 'added_at' => 'p.added_at', 'id' => 'p.id'];
 $sortKey = isset($sortMap[$gs('sort')]) ? $gs('sort') : 'sector';
+$campOrder = ($sortKey === 'sector' && $gs('dir') !== 'desc');
 $dir = $gs('dir') === 'desc' ? 'DESC' : 'ASC';
 $per = in_array((int)$gs('per', '100'), [50, 100, 250, 500], true) ? (int)$gs('per', '100') : 100;
 $pageNo = max(1, (int)$gs('pg', '1'));
-$orderSql = $sortMap[$sortKey] . " $dir, p.tent, p.id";
+$orderSql = $campOrder ? profile_order_sql('p') : $sortMap[$sortKey] . " $dir, p.tent, p.id";
 
 /* ---------- Export ---------- */
 if ($ran && isset($_GET['csv'])) {

@@ -348,9 +348,6 @@ function xlsx_xml(string $s): string
 /** Returns the .xlsx file as a binary string, or throws if the zip extension is missing. */
 function xlsx_build(array $headers, array $rows, string $sheet = 'Data'): string
 {
-    if (!class_exists('ZipArchive')) {
-        throw new RuntimeException('إضافة zip غير مفعّلة في PHP.');
-    }
     $sheet = trim(preg_replace('/[\[\]:*?\/\\\\]/', ' ', $sheet) ?? '') ?: 'Data';
     $sheet = mb_substr($sheet, 0, 31);
     $numericHeader = [];
@@ -358,59 +355,124 @@ function xlsx_build(array $headers, array $rows, string $sheet = 'Data'): string
         $numericHeader[$i] = (bool)preg_match('/(amount|qty|quantity|age|family|fam\b|المبلغ|الكمية)/i', (string)$h)
             && !preg_match('/(id|phone|fc|hh|tent)/i', (string)$h);
     }
+    $dateHeader = [];
+    foreach ($headers as $i => $h) {
+        $dateHeader[$i] = (bool)preg_match('/date/i', (string)$h);
+    }
     $nCols = max(1, count($headers));
+    $maxLen = [];
+    foreach ($headers as $i => $h) {
+        $maxLen[$i] = mb_strlen((string)$h);
+    }
+    foreach ($rows as $row) {
+        $i = 0;
+        foreach ($row as $v) {
+            $l = mb_strlen((string)$v);
+            if ($l > ($maxLen[$i] ?? 0)) {
+                $maxLen[$i] = $l;
+            }
+            $i++;
+        }
+    }
+    $colsXml = '';
+    for ($i = 0; $i < $nCols; $i++) {
+        $w = ($dateHeader[$i] ?? false) ? 14 : min(48, max(10, (int)ceil(($maxLen[$i] ?? 8) * 1.15) + 4));
+        $colsXml .= '<col min="' . ($i + 1) . '" max="' . ($i + 1) . '" width="' . $w . '" customWidth="1"/>';
+    }
+    $lastCol = xlsx_col($nCols - 1);
+    $nRows = count($rows);
+    $lastRow = $nRows + 1;
+    $fit = $nCols <= 12;            // narrow tables are scaled to one A4 page width; wide data exports keep their size
+    $landscape = $nCols > 6;
     $x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        . '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-        . '<cols><col min="1" max="' . $nCols . '" width="20" customWidth="1"/></cols><sheetData>';
-    $r = 1;
-    $x .= '<row r="1">';
+        . '<sheetPr>' . ($fit ? '<pageSetUpPr fitToPage="1"/>' : '') . '</sheetPr>'
+        . '<sheetViews><sheetView showGridLines="0" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        . '<sheetFormatPr defaultRowHeight="20"/>'
+        . '<cols>' . $colsXml . '</cols><sheetData>';
+    $x .= '<row r="1" ht="28" customHeight="1">';
     foreach ($headers as $i => $h) {
         $x .= '<c r="' . xlsx_col($i) . '1" t="inlineStr" s="1"><is><t xml:space="preserve">' . xlsx_xml((string)$h) . '</t></is></c>';
     }
     $x .= '</row>';
+    $r = 1;
     foreach ($rows as $row) {
         $r++;
+        $vals = array_values((array)$row);
         $x .= '<row r="' . $r . '">';
-        $i = 0;
-        foreach ($row as $v) {
+        for ($i = 0; $i < $nCols; $i++) {
+            $v = $vals[$i] ?? null;
             $ref = xlsx_col($i) . $r;
             if ($v === null || $v === '') {
-                $i++;
-                continue;
-            }
-            if (($numericHeader[$i] ?? false) && is_numeric($v) && !preg_match('/^0\d/', (string)$v)) {
-                $x .= '<c r="' . $ref . '"><v>' . (0 + $v) . '</v></c>';
+                $x .= '<c r="' . $ref . '" s="3"/>';      // keep the border on empty cells
+            } elseif (($dateHeader[$i] ?? false) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) && ($ts = strtotime($v . ' 00:00:00 UTC')) !== false) {
+                // real Excel date (sortable / filterable in Excel), shown as yyyy-mm-dd
+                $x .= '<c r="' . $ref . '" s="2"><v>' . (intdiv($ts, 86400) + 25569) . '</v></c>';
+            } elseif (($numericHeader[$i] ?? false) && is_numeric($v) && !preg_match('/^0\d/', (string)$v)) {
+                $x .= '<c r="' . $ref . '" s="4"><v>' . (0 + $v) . '</v></c>';
             } else {
                 // text cell: IDs keep their leading zeros and nothing is ever treated as a formula
-                $x .= '<c r="' . $ref . '" t="inlineStr"><is><t xml:space="preserve">' . xlsx_xml((string)$v) . '</t></is></c>';
+                $x .= '<c r="' . $ref . '" s="3" t="inlineStr"><is><t xml:space="preserve">' . xlsx_xml((string)$v) . '</t></is></c>';
             }
-            $i++;
         }
         $x .= '</row>';
     }
-    $x .= '</sheetData></worksheet>';
+    $x .= '</sheetData><autoFilter ref="A1:' . $lastCol . $lastRow . '"/>'
+        . '<printOptions horizontalCentered="1"/>'
+        . '<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'
+        . '<pageSetup paperSize="9" orientation="' . ($landscape ? 'landscape' : 'portrait') . '"' . ($fit ? ' fitToWidth="1" fitToHeight="0"' : '') . '/>'
+        . '<headerFooter><oddFooter>&amp;C&amp;P / &amp;N</oddFooter></headerFooter></worksheet>';
+    $qSheet = "'" . str_replace("'", "''", $sheet) . "'";
+    $definedNames = '<definedNames>'
+        . '<definedName name="_xlnm.Print_Titles" localSheetId="0">' . xlsx_xml($qSheet) . '!$1:$1</definedName>'
+        . '<definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">' . xlsx_xml($qSheet) . '!$A$1:$' . $lastCol . '$' . $lastRow . '</definedName>'
+        . '</definedNames>';
 
     $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
     $files = [
         '[Content_Types].xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
         '_rels/.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-        'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="' . $ns . '" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' . xlsx_xml($sheet) . '" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="' . $ns . '" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' . xlsx_xml($sheet) . '" sheetId="1" r:id="rId1"/></sheets>' . $definedNames . '</workbook>',
         'xl/_rels/workbook.xml.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
-        'xl/styles.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="' . $ns . '"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+        'xl/styles.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="' . $ns . '"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1B5E7E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
         'xl/worksheets/sheet1.xml' => $x,
     ];
-    $tmp = tempnam(sys_get_temp_dir(), 'xl');
-    $zip = new ZipArchive();
-    if ($zip->open($tmp, ZipArchive::OVERWRITE | ZipArchive::CREATE) !== true) {
-        throw new RuntimeException('تعذّر إنشاء ملف Excel.');
+    return xlsx_zip($files);
+}
+
+/** Builds a .zip (xlsx container) from name => content. Uses ZipArchive when available, otherwise a small pure-PHP "stored" writer. */
+function xlsx_zip(array $files): string
+{
+    if (class_exists('ZipArchive')) {
+        $tmp = tempnam(sys_get_temp_dir(), 'xl');
+        $zip = new ZipArchive();
+        if ($zip->open($tmp, ZipArchive::OVERWRITE | ZipArchive::CREATE) === true) {
+            foreach ($files as $name => $content) {
+                $zip->addFromString($name, $content);
+            }
+            $zip->close();
+            $bin = (string)file_get_contents($tmp);
+            @unlink($tmp);
+            if ($bin !== '') {
+                return $bin;
+            }
+        }
+        @unlink($tmp);
     }
+    $time = (int)date('H') << 11 | (int)date('i') << 5 | (int)((int)date('s') / 2);
+    $day = ((int)date('Y') - 1980) << 9 | (int)date('n') << 5 | (int)date('j');
+    $local = '';
+    $central = '';
+    $count = 0;
     foreach ($files as $name => $content) {
-        $zip->addFromString($name, $content);
+        $name = (string)$name;
+        $crc = crc32($content);
+        $size = strlen($content);
+        $offset = strlen($local);
+        $local .= pack('VvvvvvVVVvv', 0x04034b50, 20, 0, 0, $time, $day, $crc, $size, $size, strlen($name), 0) . $name . $content;
+        $central .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0, 0, $time, $day, $crc, $size, $size, strlen($name), 0, 0, 0, 0, 0, $offset) . $name;
+        $count++;
     }
-    $zip->close();
-    $bin = (string)file_get_contents($tmp);
-    @unlink($tmp);
-    return $bin;
+    return $local . $central . pack('VvvvvVVv', 0x06054b50, 0, 0, $count, $count, strlen($central), strlen($local), 0);
 }
 
 function xlsx_send(string $filename, array $headers, array $rows, string $sheet = 'Data'): void
@@ -470,7 +532,7 @@ function hh_list_rows(array $sectors): array
            ORDER BY (sp.full_name=p.partner_name) DESC, sp.id LIMIT 1) partner_id
       FROM profiles p
       WHERE p.archived_at IS NULL AND p.sector<>'R' AND p.is_household_head=1 AND $act AND p.sector IN (" . ph($sectors) . ")
-      ORDER BY FIELD(p.sector,'A','AS','B','BS','C','CS','D','DS','E','S','S1'), CAST(p.tent AS UNSIGNED), p.tent, p.id";
+      ORDER BY " . profile_order_sql('p');
     $q = db()->prepare($sql);
     $q->execute($sectors);
     $heads = $q->fetchAll();

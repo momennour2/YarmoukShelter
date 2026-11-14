@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notice = 'تم تحديث كلمة المرور.';
         }
     } catch (Throwable $e) {
-        $error = $e->getMessage();
+        $error = safe_error($e);
     }
 }
 

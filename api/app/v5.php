@@ -303,7 +303,7 @@ function next_candidates(string $sector, string $category, int $limit = 5): arra
     $sql = "SELECT p.sector,p.tent,p.national_id,p.full_name,p.hh_id,
         (SELECT MAX(b.delivery_date) FROM beneficiaries b WHERE b.national_id=p.national_id AND b.category=? AND b.allocation_sector=? AND COALESCE(b.distribution_type,'NORMAL')<>'FULL') last_date
       FROM profiles p WHERE p.archived_at IS NULL AND p.sector<>'R' AND (p.social_status IS NULL OR p.social_status NOT IN ('Shahid','Dead','Missing','Detained','Absent')) AND p.sector IN (" . ph($set) . ")$head
-      ORDER BY (last_date IS NOT NULL), last_date, p.added_at, p.tent, TIMESTAMPDIFF(YEAR,p.birth_date,CURDATE()) LIMIT " . max(1, min(50, $limit));
+      ORDER BY (last_date IS NOT NULL), last_date, " . org_rank_sql('job_position', 'p') . ", p.added_at, p.tent, TIMESTAMPDIFF(YEAR,p.birth_date,CURDATE()), p.id LIMIT " . max(1, min(50, $limit));
     $q = db()->prepare($sql);
     $q->execute(array_merge([$category, $alloc], $set));
     return $q->fetchAll();

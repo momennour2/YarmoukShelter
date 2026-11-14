@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'setpass')
         $_SESSION['resident']['must_set_password'] = 0;
         go('resident.php?pw=1');
     } catch (Throwable $e) {
-        $error = $e->getMessage();
+        $error = safe_error($e);
         $page = 'setpass';
     }
 }
@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ticket') 
         ]);
         go('resident.php?page=tickets&sent=' . (int)db()->lastInsertId());
     } catch (Throwable $e) {
-        $error = $e->getMessage();
+        $error = safe_error($e);
         $page = 'new';
     }
 }
