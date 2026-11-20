@@ -114,3 +114,4 @@ require_once __DIR__.'/v6.php';
 require_once __DIR__.'/auth.php';
 require_once __DIR__.'/filters.php';
 require_once __DIR__.'/charts.php';
+require_once __DIR__.'/errors.php';

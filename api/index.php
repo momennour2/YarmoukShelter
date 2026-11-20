@@ -17,7 +17,7 @@ if($page==='resident_codes'){
  $g=(string)($_POST['g']??'');$vg=visible_groups();$secs=($g!==''&&isset($vg[$g]))?$vg[$g]:array_values(array_unique(array_merge(...array_values($vg?:[[]]))));
  $q=db()->prepare("SELECT p.sector,p.tent,p.national_id,p.full_name FROM profiles p WHERE p.archived_at IS NULL AND p.sector<>'R' AND p.is_household_head=1 AND ".ACTIVE_SQL." AND p.national_id<>'' AND p.sector IN (".ph($secs?:['__none__']).") AND NOT EXISTS (SELECT 1 FROM resident_accounts ra WHERE ra.national_id=p.national_id) ORDER BY ".profile_order_sql('p'));
  $q->execute($secs?:['__none__']);$rows=[];$seen=[];
- foreach($q->fetchAll() as $r){if(isset($seen[$r['national_id']]))continue;$seen[$r['national_id']]=1;$c=resident_code_issue((string)$r['national_id']);$rows[]=[$r['sector'],$r['tent'],$r['national_id'],$r['full_name'],$c['code'],substr($c['expires'],0,10)];}
+ @set_time_limit(120);$batch=[];foreach($q->fetchAll() as $r){if(isset($seen[$r['national_id']]))continue;$seen[$r['national_id']]=1;$c=resident_code_make();$batch[]=[(string)$r['national_id'],$c['hash'],$c['expires']];$rows[]=[$r['sector'],$r['tent'],$r['national_id'],$r['full_name'],$c['code'],substr($c['expires'],0,10)];}resident_codes_store($batch);
  audit('export','resident_codes',null,($g?:'all').' count='.count($rows));
  xlsx_send('Yarmouk_Activation_Codes'.($g!==''?'_'.$g:'').'_'.date('Y-m-d').'.xlsx',['Sector','Tent','ID','Name','Activation Code','Valid Until'],$rows,'Codes');}
 if($page==='lookup'){while(ob_get_level()>0)ob_end_clean();header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');

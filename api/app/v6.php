@@ -633,8 +633,23 @@ function session_rate_limit(string $bucket, int $max, int $seconds): bool
  * Resident activation codes (replace the guessable "birth year" first login)
  * ===================================================================== */
 
-/** 8 random characters, no look-alikes (no 0/O/1/I/L). Shown as XXXX-XXXX. */
-function resident_code_issue(string $nid): array
+/** Server-side secret for activation-code hashes (set APP_KEY in the environment for a custom one). */
+function code_pepper(): string
+{
+    $k = (string)(getenv('APP_KEY') ?: '');
+    if ($k === '') {
+        $cfg = require __DIR__ . '/../config.php';
+        $k = hash('sha256', (string)($cfg['db_pass'] ?? '') . '|' . (string)($cfg['db_name'] ?? '') . '|yarmouk-activation');
+    }
+    return $k;
+}
+
+/**
+ * 8 random characters, no look-alikes (no 0/O/1/I/L). Shown as XXXX-XXXX.
+ * Codes are random, single-use, expire and are rate limited, so they are stored with a fast keyed hash (HMAC-SHA256)
+ * instead of Argon2: issuing hundreds of codes at once used to exceed the serverless time limit (HTTP 500).
+ */
+function resident_code_make(): array
 {
     $alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     $raw = '';
@@ -642,10 +657,31 @@ function resident_code_issue(string $nid): array
         $raw .= $alphabet[random_int(0, strlen($alphabet) - 1)];
     }
     $days = max(1, min(365, (int)setting('activation_days', '30')));
-    $exp = date('Y-m-d H:i:s', time() + $days * 86400);
-    db()->prepare('REPLACE INTO resident_codes(national_id,code_hash,expires_at) VALUES(?,?,?)')
-        ->execute([$nid, hash_password($raw), $exp]);
-    return ['code' => substr($raw, 0, 4) . '-' . substr($raw, 4), 'expires' => $exp];
+    return [
+        'code' => substr($raw, 0, 4) . '-' . substr($raw, 4),
+        'hash' => 'h1$' . hash_hmac('sha256', $raw, code_pepper()),
+        'expires' => date('Y-m-d H:i:s', time() + $days * 86400),
+    ];
+}
+
+/** Multi-row REPLACE: one round trip per 200 codes instead of one per family. $items = [[national_id, hash, expires], ...] */
+function resident_codes_store(array $items): void
+{
+    foreach (array_chunk($items, 200) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '(?,?,?)'));
+        $args = [];
+        foreach ($chunk as $it) {
+            array_push($args, $it[0], $it[1], $it[2]);
+        }
+        db()->prepare('REPLACE INTO resident_codes(national_id,code_hash,expires_at) VALUES ' . $ph)->execute($args);
+    }
+}
+
+function resident_code_issue(string $nid): array
+{
+    $c = resident_code_make();
+    resident_codes_store([[$nid, $c['hash'], $c['expires']]]);
+    return ['code' => $c['code'], 'expires' => $c['expires']];
 }
 
 function resident_code_valid(string $nid, string $typed): bool
@@ -657,7 +693,14 @@ function resident_code_valid(string $nid, string $typed): bool
     $q = db()->prepare('SELECT code_hash FROM resident_codes WHERE national_id=? AND expires_at>NOW()');
     $q->execute([$nid]);
     $h = $q->fetchColumn();
-    return $h !== false && password_verify($c, (string)$h);
+    if ($h === false) {
+        return false;
+    }
+    $h = (string)$h;
+    if (strncmp($h, 'h1$', 3) === 0) {
+        return hash_equals($h, 'h1$' . hash_hmac('sha256', $c, code_pepper()));   // new fast format
+    }
+    return password_verify($c, $h);                                                 // codes issued before this update
 }
 
 /** Per (ID + IP): 5 fails / 15 min.  Per ID from anywhere: 30 fails / 15 min (stops distributed guessing without letting one stranger lock a family out). */
